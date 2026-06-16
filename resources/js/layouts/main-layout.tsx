@@ -8,7 +8,7 @@ export default function MainLayout({ children }: {children: React.ReactNode}) {
         <div className="flex">
             <Sidebar user={auth.user} />
 
-            <main className="flex-1 bg-gray-50 min-h-screen">
+            <main className="flex-1 overflow-y-auto p-6 bg-gray-50 min-h-screen">
                 {children}
             </main>
         </div>
