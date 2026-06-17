@@ -126,7 +126,7 @@ function SidebarFooter({user}) {
     )
 }
 
-function getInitials(name?: string) {
+export function getInitials(name?: string) {
     if (!name) {
         return "?"
     }
