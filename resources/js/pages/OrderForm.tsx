@@ -268,7 +268,7 @@ return false;
   );
 }
 
-export default function OrderForm({ product, onNavigate }: { product?: Product | null; onNavigate?: (v: View) => void }) {
+export default function OrderForm({ product, orderToEdit, onNavigate }: { product?: Product | null; orderToEdit?: any; onNavigate?: (v: View) => void }) {
 
     const [color, setColor] = useState("#ffffff");
 
@@ -310,11 +310,15 @@ return product;
   };
 
   const prod = getSelectedProduct();
-  const [quantities, setQuantities] = useState<Record<BulkSize, number>>({ XS: 0, S: 0, M: 0, L: 0, XL: 0, XXL: 0 });
-  const [notes, setNotes] = useState("");
-  const [dueDate, setDueDate] = useState<string | null>(null);
+  const [quantities, setQuantities] = useState<Record<BulkSize, number>>(
+    orderToEdit?.sizes || { XS: 0, S: 0, M: 0, L: 0, XL: 0, XXL: 0 }
+  );
+  const [notes, setNotes] = useState(orderToEdit?.notes || "");
+  const [dueDate, setDueDate] = useState<string | null>(
+    orderToEdit?.due_date ? new Date(orderToEdit.due_date).toISOString().slice(0, 10) : null
+  );
   const [dragging, setDragging] = useState(false);
-  const [fileName, setFileName] = useState<string | null>(null);
+  const [fileName, setFileName] = useState<string | null>(orderToEdit?.design_file_path || null);
   const [processing, setProcessing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -336,7 +340,7 @@ return;
 
     setProcessing(true);
 
-    router.post('/orders', {
+    const payload = {
       product_id: prod.id,
       product_name: prod.name,
       sizes: quantities,
@@ -348,16 +352,31 @@ return;
       notes: notes || null,
       has_design: !!fileName,
       design_file_path: fileName || null,
-    }, {
-      onSuccess: () => {
-        if (onNavigate) {
-          onNavigate('my-orders');
-        } else {
-          router.visit('/my-orders');
-        }
-      },
-      onFinish: () => setProcessing(false),
-    });
+    };
+
+    if (orderToEdit) {
+      router.put(`/orders/${orderToEdit.id}`, payload, {
+        onSuccess: () => {
+          if (onNavigate) {
+            onNavigate('my-orders');
+          } else {
+            router.visit('/my-orders');
+          }
+        },
+        onFinish: () => setProcessing(false),
+      });
+    } else {
+      router.post('/orders', payload, {
+        onSuccess: () => {
+          if (onNavigate) {
+            onNavigate('my-orders');
+          } else {
+            router.visit('/my-orders');
+          }
+        },
+        onFinish: () => setProcessing(false),
+      });
+    }
   };
 
   return (
@@ -393,7 +412,7 @@ return;
                     <span className="inline-block text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded-full mt-0.5">{prod.category}</span>
                   </div>
                   <div className="text-right flex-shrink-0">
-                    <p className="text-base font-bold text-foreground">${prod.basePrice}</p>
+                    <p className="text-base font-bold text-foreground">RM{prod.basePrice}</p>
                     <p className="text-xs text-muted-foreground">per piece</p>
                   </div>
                 </div>
@@ -454,7 +473,7 @@ return;
                       </p>
                       {active && (
                         <p className="text-xs text-indigo-500 font-medium mt-0.5">
-                          ${prod.basePrice} × {qty} = ${lineTotal}
+                          RM{prod.basePrice} × {qty} = RM{lineTotal}
                         </p>
                       )}
                     </div>
@@ -464,7 +483,7 @@ return;
                       <SizeStepper value={qty} onChange={v => setQty(size, v)} active={active} />
                       {active && (
                         <span className="text-xs font-semibold text-indigo-600 w-14 text-right tabular-nums">
-                          ${lineTotal}
+                          RM{lineTotal}
                         </span>
                       )}
                       {!active && <span className="w-14" />}
@@ -625,17 +644,30 @@ return;
 
             {/* Size breakdown lines */}
             {totalQty > 0 ? (
-              <div className="space-y-1.5 mb-4">
+              <div className="space-y-0.5 mb-4">
+                {/* Header Row */}
+                <div className="flex justify-between text-[9px] font-black text-muted-foreground/40 uppercase tracking-[0.15em] px-1 mb-2">
+                  <span className="w-24">Size & Qty</span>
+                  <span className="flex-1 text-center">Unit Price</span>
+                  <span className="w-16 text-right">Total</span>
+                </div>
+
                 {activeLines.map(s => (
-                  <div key={s} className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      <span className="w-7 h-5 rounded bg-indigo-100 text-indigo-700 font-bold flex items-center justify-center">{s}</span>
-                      <span className="text-muted-foreground">× {quantities[s]} pcs</span>
+                  <div key={s} className="flex items-center justify-between text-xs py-2 px-1 border-b border-border/40 last:border-0">
+                    <div className="flex items-center gap-2.5 w-24">
+                      <span className="w-6 h-6 rounded bg-indigo-600 text-white font-bold flex items-center justify-center text-[10px] flex-shrink-0 shadow-sm">{s}</span>
+                      <span className="text-foreground font-medium">{quantities[s]} pcs</span>
                     </div>
-                    <span className="font-semibold text-foreground tabular-nums">${quantities[s] * prod.basePrice}</span>
+                    <div className="flex-1 text-center">
+                      <span className="text-muted-foreground/60 text-[10px] font-medium mr-1.5">RM</span>
+                      <span className="text-foreground font-semibold tracking-tight">{prod.basePrice.toFixed(2)}</span>
+                    </div>
+                    <div className="w-16 text-right font-bold text-indigo-600 tabular-nums">
+                      RM{(quantities[s] * prod.basePrice).toLocaleString()}
+                    </div>
                   </div>
                 ))}
-                <div className="border-t border-dashed border-border pt-1.5 mt-2" />
+                <div className="pt-2" />
               </div>
             ) : (
               <div className="mb-4 py-5 rounded-lg bg-muted/50 flex flex-col items-center text-center">
@@ -648,7 +680,7 @@ return;
             <div className="space-y-2.5 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Unit price</span>
-                <span className="font-medium text-foreground">${prod.basePrice}</span>
+                <span className="font-medium text-foreground">RM{prod.basePrice}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-muted-foreground">Total pieces</span>
@@ -656,7 +688,7 @@ return;
               </div>
               <div className="flex justify-between border-t border-border pt-2.5">
                 <span className="font-semibold text-foreground">Subtotal</span>
-                <span className="font-bold text-foreground text-base tabular-nums">${subtotal.toLocaleString()}</span>
+                <span className="font-bold text-foreground text-base tabular-nums">RM{subtotal.toLocaleString()}</span>
               </div>
             </div>
 
@@ -664,14 +696,14 @@ return;
               <div className="mt-3 rounded-xl overflow-hidden border border-indigo-200">
                 <div className="bg-indigo-600 px-4 py-3">
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-indigo-100">Deposit to confirm</span>
-                    <span className="text-lg font-black text-white tabular-nums">${deposit.toFixed(0)}</span>
+                    <span className="text-xs font-bold text-indigo-100">Deposit required later</span>
+                    <span className="text-lg font-black text-white tabular-nums">RM{deposit.toFixed(0)}</span>
                   </div>
-                  <p className="text-xs text-indigo-300 mt-0.5">{prod.depositRate * 100}% of subtotal · paid now</p>
+                  <p className="text-xs text-indigo-300 mt-0.5">{prod.depositRate * 100}% of subtotal · paid after acceptance</p>
                 </div>
                 <div className="bg-indigo-50 px-4 py-2.5 flex items-center justify-between">
                   <span className="text-xs text-indigo-600 font-medium">Balance on collection</span>
-                  <span className="text-sm font-bold text-indigo-700 tabular-nums">${remainingRounded}</span>
+                  <span className="text-sm font-bold text-indigo-700 tabular-nums">RM{remainingRounded}</span>
                 </div>
               </div>
             )}
@@ -704,7 +736,7 @@ return;
               disabled={!canCheckout || processing}
               className="w-full mt-4 py-2.5 bg-primary text-primary-foreground text-sm font-semibold rounded-lg hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors shadow-sm flex items-center justify-center gap-2"
             >
-              {processing ? 'Submitting...' : 'Proceed to Checkout'} <ArrowRight size={15} />
+              {processing ? 'Submitting...' : (orderToEdit ? 'Resubmit Order Request' : 'Submit Order Request')} <ArrowRight size={15} />
             </button>
             {!canCheckout && (
               <p className="text-xs text-center text-muted-foreground mt-1.5">
@@ -728,9 +760,9 @@ return;
               <div>
                 <p className="text-xs font-semibold text-foreground">How it works</p>
                 <ol className="text-xs text-muted-foreground mt-1.5 space-y-1 list-decimal list-inside">
-                  <li>Submit your order & pay deposit</li>
+                  <li>Submit your order for review</li>
                   <li>Tailor reviews & confirms</li>
-                  <li>Production begins</li>
+                  <li>Pay deposit to start production</li>
                   <li>Collect & pay remaining balance</li>
                 </ol>
               </div>
