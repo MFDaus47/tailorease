@@ -14,6 +14,7 @@ import {
     AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, PieChart, Pie, Cell
 } from "recharts";
+import Sidebar from "@/components/sidebar/NewSidebar";
 
 // ═══════════════════════════════════════════════════════════
 // TYPES
@@ -384,87 +385,6 @@ function CalendarPicker({ value, onChange, label = "Expected Due Date", minDaysF
   );
 }
 
-function Sidebar({ role, currentView, onNavigate }: { role: Role; currentView: View; onNavigate: (v: View) => void }) {
-  const customerItems = [
-    { view: "dashboard" as View, icon: <LayoutDashboard size={17} />, label: "Dashboard" },
-    { view: "catalog" as View, icon: <ShoppingBag size={17} />, label: "Apparel Catalog" },
-    { view: "my-orders" as View, icon: <Package size={17} />, label: "My Orders" },
-    { view: "notifications" as View, icon: <Bell size={17} />, label: "Notifications", badge: 2 },
-  ];
-  const tailorItems = [
-    { view: "dashboard" as View, icon: <LayoutDashboard size={17} />, label: "Dashboard" },
-    { view: "incoming" as View, icon: <Inbox size={17} />, label: "Incoming Orders", badge: 2 },
-    { view: "all-orders" as View, icon: <List size={17} />, label: "All Orders" },
-    { view: "kanban" as View, icon: <Layers size={17} />, label: "Production Board" },
-    { view: "manage-catalog" as View, icon: <Tag size={17} />, label: "Manage Catalog" },
-    { view: "reports" as View, icon: <BarChart2 size={17} />, label: "Reports" },
-    { view: "notifications" as View, icon: <Bell size={17} />, label: "Notifications", badge: 3 },
-  ];
-  const items = role === "customer" ? customerItems : tailorItems;
-
-  return (
-    <aside className="w-60 flex-shrink-0 h-screen flex flex-col" style={{ background: "#1E1B4B" }}>
-      {/* Logo */}
-      <div className="px-5 py-5 border-b" style={{ borderColor: "rgba(99,102,241,0.2)" }}>
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-indigo-500 flex items-center justify-center">
-            <Scissors size={16} className="text-white" />
-          </div>
-          <div>
-            <span className="text-white font-bold text-sm tracking-tight">Tailor-Ease</span>
-            <p className="text-indigo-300 text-xs" style={{ fontSize: "10px", marginTop: "-1px" }}>
-              {role === "customer" ? "Customer Portal" : "Tailor Dashboard"}
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto">
-        {items.map((item) => {
-          const active = currentView === item.view;
-          return (
-            <button
-              key={item.view}
-              onClick={() => onNavigate(item.view)}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 group ${
-                active
-                  ? "bg-indigo-500/25 text-white"
-                  : "text-indigo-200 hover:bg-indigo-500/15 hover:text-white"
-              }`}
-            >
-              <span className="flex items-center gap-3">
-                <span className={active ? "text-indigo-300" : "text-indigo-400 group-hover:text-indigo-300"}>
-                  {item.icon}
-                </span>
-                {item.label}
-              </span>
-              {item.badge && (
-                <span className="bg-indigo-500 text-white text-xs font-semibold rounded-full w-5 h-5 flex items-center justify-center">
-                  {item.badge}
-                </span>
-              )}
-            </button>
-          );
-        })}
-      </nav>
-
-      {/* Footer */}
-      <div className="px-3 py-4 border-t" style={{ borderColor: "rgba(99,102,241,0.2)" }}>
-        <div className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-indigo-500/10 cursor-pointer group">
-          <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-white text-xs font-semibold">
-            {role === "customer" ? "MS" : "JT"}
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-white text-xs font-medium truncate">{role === "customer" ? "Maria Santos" : "Juan Tailor"}</p>
-            <p className="text-indigo-400 text-xs truncate" style={{ fontSize: "10px" }}>{role === "customer" ? "Customer" : "Owner"}</p>
-          </div>
-          <Settings size={14} className="text-indigo-400 group-hover:text-indigo-200 flex-shrink-0" />
-        </div>
-      </div>
-    </aside>
-  );
-}
 
 // ═══════════════════════════════════════════════════════════
 // TOP NAV
@@ -2180,42 +2100,6 @@ function Reports() {
   );
 }
 
-// ═══════════════════════════════════════════════════════════
-// NOTIFICATIONS PAGE
-// ═══════════════════════════════════════════════════════════
-function NotificationsPage() {
-  const [notifs, setNotifs] = useState(NOTIFICATIONS);
-  return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-foreground">Notifications</h1>
-          <p className="text-sm text-muted-foreground mt-0.5">{notifs.filter(n => !n.read).length} unread notifications</p>
-        </div>
-        <button onClick={() => setNotifs(n => n.map(x => ({ ...x, read: true })))} className="text-xs text-indigo-600 font-medium hover:underline">Mark all as read</button>
-      </div>
-      <Card className="divide-y divide-border">
-        {notifs.map(n => (
-          <div key={n.id} onClick={() => setNotifs(ns => ns.map(x => x.id === n.id ? { ...x, read: true } : x))} className={`flex items-start gap-4 px-5 py-4 cursor-pointer hover:bg-muted/30 transition-colors ${!n.read ? "bg-indigo-50/40" : ""}`}>
-            <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5 ${n.type === "order" ? "bg-indigo-100 text-indigo-600" : n.type === "payment" ? "bg-emerald-100 text-emerald-600" : "bg-amber-100 text-amber-600"}`}>
-              {n.type === "order" ? <Package size={16} /> : n.type === "payment" ? <CreditCard size={16} /> : <MessageSquare size={16} />}
-            </div>
-            <div className="flex-1 min-w-0">
-              <div className="flex items-start justify-between gap-3">
-                <p className={`text-sm font-semibold ${!n.read ? "text-foreground" : "text-muted-foreground"}`}>{n.title}</p>
-                <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className="text-xs text-muted-foreground whitespace-nowrap">{n.time}</span>
-                  {!n.read && <div className="w-2 h-2 rounded-full bg-indigo-500 flex-shrink-0" />}
-                </div>
-              </div>
-              <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{n.body}</p>
-            </div>
-          </div>
-        ))}
-      </Card>
-    </div>
-  );
-}
 
 // ═══════════════════════════════════════════════════════════
 // MAIN APP
@@ -2268,7 +2152,6 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-background overflow-hidden" style={{ fontFamily: "'Inter', sans-serif" }}>
-      <Sidebar role={role} currentView={view} onNavigate={navigate} />
       <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <TopNav
           role={role}
