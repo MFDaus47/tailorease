@@ -1,14 +1,16 @@
-import { OrbitControls, Environment } from "@react-three/drei";
+import { OrbitControls, Environment, useTexture } from "@react-three/drei";
 import { Canvas } from "@react-three/fiber";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import * as THREE from "three";
 import CameraController from "./CameraController";
 import ShirtModel from "./ShirtModel";
 
 interface Props {
     color: string;
+    designUrl: string | null;
 }
 
-export default function ShirtViewer({ color }: Props) {
+export default function ShirtViewer({ color, designUrl }: Props) {
     const [rotation, setRotation] = useState(0);
     const [view, setView]  = useState<"front" | "back">("front");
 
@@ -38,7 +40,7 @@ export default function ShirtViewer({ color }: Props) {
                         intensity={2}
                     />
 
-                    <ShirtModel color={color} rotation={rotation} />
+                    <ShirtModel color={color} rotation={rotation} designUrl={designUrl} />
 
                     <Environment preset="city" />
 

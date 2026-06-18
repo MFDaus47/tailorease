@@ -272,6 +272,21 @@ export default function OrderForm({ product, onNavigate }: { product?: Product |
 
     const [color, setColor] = useState("#ffffff");
 
+    const [designFile, setDesignFile] = useState<File | null>(null);
+    const [designUrl, setDesignUrl] = useState<String | null>(null);
+
+    const handleFile = (f?: File) => {
+        if (!f) {
+            return;
+        }
+
+        setFileName(f.name);
+        setDesignFile(f);
+
+        const url = URL.createObjectURL(f);
+        setDesignUrl(url);
+    }
+
   // Resolve product from prop, URL, or fallback
   const getSelectedProduct = (): Product => {
     if (product) {
@@ -285,9 +300,9 @@ return product;
     if (productId) {
       const found = dummyProducts.find((p: Product) => p.id === productId);
 
-      if (found) {
-return found;
-}
+        if (found) {
+            return found;
+        }
     }
 
     // Fallback to first product
@@ -522,7 +537,10 @@ return;
                 }}
                 onDragLeave={() => setDragging(false)}
                 onDrop={e => {
-                    e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0];
+                    e.preventDefault();
+                    setDragging(false);
+                    const f = e.dataTransfer.files[0];
+                    handleFile(f);
 
                 if (f) {
                     setFileName(f.name);
@@ -531,13 +549,20 @@ return;
               onClick={() => fileRef.current?.click()}
               className={`border-2 border-dashed rounded-xl p-7 text-center cursor-pointer transition-all ${dragging ? "border-primary bg-accent scale-[1.01]" : "border-border hover:border-indigo-300 hover:bg-muted/30"}`}
             >
-              <input ref={fileRef} type="file" className="hidden" onChange={e => {
- const f = e.target.files?.[0];
+              <input
+                ref={fileRef}
+                type="file"
+                className="hidden"
+                onChange={e => {
+                    const f = e.target.files?.[0];
+                    handleFile(f);
 
- if (f) {
-setFileName(f.name);
-}
-}} accept="image/*,.pdf,.ai" />
+                    if (f) {
+                    setFileName(f.name);
+                    }
+                    }} accept="image/*,.pdf,.ai"
+
+                />
               {fileName ? (
                 <div className="flex items-center justify-center gap-3">
                   <div className="w-9 h-9 rounded-lg bg-indigo-100 flex items-center justify-center">
@@ -577,7 +602,7 @@ setFileName(f.name);
                 }
             />
 
-            <ShirtViewer color={color}/>
+            <ShirtViewer color={color} designUrl={designUrl}/>
           </Card>
 
           {/* Special Instructions */}
