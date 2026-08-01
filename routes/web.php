@@ -3,6 +3,7 @@
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\TailorOrderController;
+use Inertia\Inertia;
 
 Route::inertia('/', 'welcome')->name('home');
 
@@ -22,13 +23,20 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::inertia('kanban', 'KanbanBoard')->name('kanban');
     Route::inertia('manage-catalog', 'ManageCatalog')->name('manage-catalog');
     Route::inertia('reports', 'Reports')->name('reports');
+    Route::get('tailor/dashboard', [TailorOrderController::class, 'dashboard'])->name('tailor.dashboard');
 
     Route::inertia('order-form', 'OrderForm')->name('order-form');
     Route::post('orders', [OrderController::class, 'store'])->name('orders.store');
+    Route::get('orders/{order}/edit', [OrderController::class, 'edit'])->name('orders.edit');
+    Route::put('orders/{order}', [OrderController::class, 'update'])->name('orders.update');
     Route::get('order-tracking/{order}', [OrderController::class, 'show'])->name('order-tracking');
     Route::inertia('payment-success', 'PaymentSuccess')->name('payment-success');
     Route::inertia('payment-failed', 'PaymentFailed')->name('payment-failed');
     Route::inertia('checkout', 'Checkout')->name('checkout');
 });
+
+Route::get('/designer', function() {
+    return Inertia::render('DesignerPage');
+})->name('designerPage');
 
 require __DIR__.'/settings.php';
