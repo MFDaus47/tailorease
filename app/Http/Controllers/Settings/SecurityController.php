@@ -28,7 +28,7 @@ class SecurityController extends Controller
                     ->latest()
                     ->get()
                     ->map(fn ($passkey) => [
-                        'id' => $passkey->id,
+                        'id' => (string) $passkey->id,
                         'name' => $passkey->name,
                         'authenticator' => $passkey->authenticator,
                         'created_at_diff' => $passkey->created_at->diffForHumans(),

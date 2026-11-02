@@ -1,0 +1,58 @@
+services:
+  app:
+    build:
+      context: ./docker/php
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+      - "5173:5173"
+    volumes:
+      - .:/var/www/html
+      - tailorease_node_modules:/var/www/html/node_modules
+    environment:
+      APP_URL: http://localhost:8000
+      DB_CONNECTION: mongodb
+      MONGODB_URI: mongodb://mongodb:27017/?replicaSet=rs0
+      MONGODB_DATABASE: tailorease
+      SESSION_DRIVER: mongodb
+      SESSION_CONNECTION: mongodb
+      CACHE_STORE: mongodb
+      QUEUE_CONNECTION: mongodb
+      QUEUE_FAILED_DRIVER: file
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+    command: >
+      sh -c "composer install &&
+      npm install &&
+      php artisan migrate --force &&
+      npx concurrently -c '#93c5fd,#c4b5fd,#fdba74'
+      'php artisan serve --host=0.0.0.0 --port=8000'
+      'php artisan queue:listen --tries=1'
+      'npm run dev -- --host 0.0.0.0 --port 5173'"
+
+  mongodb:
+    image: mongo:8
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - tailorease_mongo:/data/db
+
+  mongo-init:
+    image: mongo:8
+    depends_on:
+      - mongodb
+    restart: "no"
+    entrypoint:
+      - bash
+      - -c
+      - |
+        until mongosh --host mongodb --eval 'db.runCommand({ ping: 1 })' >/dev/null 2>&1; do
+          sleep 1
+        done
+        mongosh --host mongodb --eval 'try { rs.status() } catch (e) { rs.initiate({_id: "rs0", members: [{_id: 0, host: "mongodb:27017"}]}) }'
+
+volumes:
+  tailorease_mongo:
+  tailorease_node_modules:

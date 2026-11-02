@@ -2,8 +2,8 @@
 
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use MongoDB\Laravel\Eloquent\Model;
 
 class Order extends Model
 {
@@ -11,6 +11,7 @@ class Order extends Model
         'customer_id',
         'product_id',
         'product_name',
+        'order_name',
         'sizes',
         'total_quantity',
         'total',
@@ -20,17 +21,22 @@ class Order extends Model
         'notes',
         'has_design',
         'design_file_path',
+        'items',
         'status',
     ];
 
+    protected $attributes = [
+        'status' => 'pending',
+        'has_design' => false,
+    ];
+
     protected $casts = [
-        'sizes' => 'array',
         'due_date' => 'date',
         'has_design' => 'boolean',
     ];
 
     public function customer(): BelongsTo
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class, 'customer_id');
     }
 }

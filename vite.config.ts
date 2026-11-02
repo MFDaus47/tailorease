@@ -28,4 +28,19 @@ export default defineConfig({
             formVariants: true,
         }),
     ],
+    server: {
+        host: '0.0.0.0',
+        port: 5173,
+        strictPort: true,
+        origin: 'http://localhost:5173',
+        cors: {
+            origin: ['http://localhost:8000', 'http://localhost:5173'],
+        },
+        hmr: {
+            host: 'localhost',
+        },
+        watch: {
+            usePolling: true,
+        },
+    },
 });
