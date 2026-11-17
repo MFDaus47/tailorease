@@ -32,18 +32,31 @@ function clampToZone(
   return { x: cx, y: cy };
 }
 
-export function useDesigner() {
+export type StickerRecord = {
+  id: string;
+  name: string;
+  slug: string;
+  svg: string;
+};
+
+export function useDesigner(
+  library: StickerRecord[] = [],
+  initial?: { elements?: DesignElement[]; shirtColor?: string; productType?: ProductType } | null,
+) {
   const stageRef = useRef<any>(null);
+  const libraryRef = useRef(library);
+  libraryRef.current = library;
+  const startingElements = initial?.elements ?? [];
 
   const [state, setState] = useState<DesignerState>({
-    elements: [],
+    elements: startingElements,
     selectedId: null,
-    shirtColor: "#1a1a2e",
+    shirtColor: initial?.shirtColor ?? "#1a1a2e",
     activeView: "front",
     viewMode: "split", // Default to split view so 3D shirt is visible immediately!
-    productType: "tshirt",
+    productType: initial?.productType ?? "tshirt",
     printZone: "front",
-    history: [[]],
+    history: [startingElements],
     historyIndex: 0,
     zoom: 1,
     panX: 0,
@@ -172,12 +185,12 @@ export function useDesigner() {
   );
 
   const addSticker = useCallback(
-    (emoji: string) => {
+    (sticker: { id: string; name: string; svg: string }) => {
       const pos = clampToZone(160, 155, 60, 60);
       const el: StickerElement = {
         id: generateId(),
         type: "sticker",
-        name: `Sticker ${emoji}`,
+        name: sticker.name,
         x: pos.x,
         y: pos.y,
         width: 60,
@@ -188,7 +201,8 @@ export function useDesigner() {
         visible: true,
         scaleX: 1,
         scaleY: 1,
-        emoji,
+        stickerId: sticker.id,
+        svg: sticker.svg,
       };
       const next = [...state.elements, el];
       pushHistory(next);
@@ -261,7 +275,29 @@ export function useDesigner() {
 
   // ── Load Preset Full Templates ───────────────────────────────────────────
   const loadFullTemplate = useCallback((templateKey: string) => {
-    let templateElements: DesignElement[] = [];
+    const placed = (slug: string, x: number, y: number, size = 60): StickerElement | null => {
+      const found = libraryRef.current.find((item) => item.slug === slug);
+      if (!found) return null;
+      return {
+        id: generateId(),
+        type: "sticker",
+        name: found.name,
+        stickerId: found.id,
+        svg: found.svg,
+        x,
+        y,
+        width: size,
+        height: size,
+        rotation: 0,
+        opacity: 1,
+        locked: false,
+        visible: true,
+        scaleX: 1,
+        scaleY: 1,
+      };
+    };
+
+    let templateElements: Array<DesignElement | null> = [];
 
     if (templateKey === "esports") {
       templateElements = [
@@ -284,22 +320,7 @@ export function useDesigner() {
           stroke: "#ffffff",
           strokeWidth: 2,
         },
-        {
-          id: generateId(),
-          type: "sticker",
-          name: "Crown",
-          emoji: "👑",
-          x: 170,
-          y: 115,
-          width: 60,
-          height: 60,
-          rotation: 0,
-          opacity: 1,
-          locked: false,
-          visible: true,
-          scaleX: 1,
-          scaleY: 1,
-        },
+        placed("crown", 170, 115),
         {
           id: generateId(),
           type: "text",
@@ -377,22 +398,7 @@ export function useDesigner() {
           stroke: "#000000",
           strokeWidth: 1,
         },
-        {
-          id: generateId(),
-          type: "sticker",
-          name: "Trophy",
-          emoji: "🏆",
-          x: 170,
-          y: 155,
-          width: 60,
-          height: 60,
-          rotation: 0,
-          opacity: 1,
-          locked: false,
-          visible: true,
-          scaleX: 1,
-          scaleY: 1,
-        },
+        placed("trophy", 170, 155),
         {
           id: generateId(),
           type: "text",
@@ -464,22 +470,7 @@ export function useDesigner() {
           scaleX: 1,
           scaleY: 1,
         },
-        {
-          id: generateId(),
-          type: "sticker",
-          name: "Fire",
-          emoji: "🔥",
-          x: 175,
-          y: 170,
-          width: 50,
-          height: 50,
-          rotation: 0,
-          opacity: 1,
-          locked: false,
-          visible: true,
-          scaleX: 1,
-          scaleY: 1,
-        },
+        placed("flame", 175, 170, 50),
       ];
     } else if (templateKey === "vintage") {
       templateElements = [
@@ -502,22 +493,7 @@ export function useDesigner() {
           scaleX: 1,
           scaleY: 1,
         },
-        {
-          id: generateId(),
-          type: "sticker",
-          name: "Compass",
-          emoji: "🎯",
-          x: 170,
-          y: 140,
-          width: 60,
-          height: 60,
-          rotation: 0,
-          opacity: 1,
-          locked: false,
-          visible: true,
-          scaleX: 1,
-          scaleY: 1,
-        },
+        placed("target", 170, 140),
         {
           id: generateId(),
           type: "text",
@@ -545,9 +521,11 @@ export function useDesigner() {
       ];
     }
 
-    if (templateElements.length > 0) {
-      pushHistory(templateElements);
-      setState((prev) => ({ ...prev, selectedId: templateElements[0]?.id ?? null }));
+    const readyElements = templateElements.filter((element): element is DesignElement => element !== null);
+
+    if (readyElements.length > 0) {
+      pushHistory(readyElements);
+      setState((prev) => ({ ...prev, selectedId: readyElements[0]?.id ?? null }));
     }
   }, [pushHistory]);
 

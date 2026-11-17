@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\DesignController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\StickerController;
@@ -15,6 +16,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('catalog', [ProductController::class, 'catalog'])->name('catalog');
     Route::get('my-orders', [OrderController::class, 'myOrders'])->name('my-orders');
     Route::inertia('notifications', 'Notifications')->name('notifications');
+
+    Route::inertia('order-form', 'OrderForm')->name('order-form');
+    Route::post('orders', [OrderController::class, 'store'])->name('orders.store');
+    Route::get('orders/{order}/edit', [OrderController::class, 'edit'])->name('orders.edit');
+    Route::put('orders/{order}', [OrderController::class, 'update'])->name('orders.update');
+    Route::get('order-tracking/{order}', [OrderController::class, 'show'])->name('order-tracking');
+    Route::inertia('payment-success', 'PaymentSuccess')->name('payment-success');
+    Route::inertia('payment-failed', 'PaymentFailed')->name('payment-failed');
+    Route::inertia('checkout', 'Checkout')->name('checkout');
+
+    Route::get('designer', [DesignController::class, 'editor'])->name('designerPage');
+    Route::post('designs', [DesignController::class, 'store'])->name('designs.store');
 
     Route::middleware('tailor')->group(function () {
         Route::get('incoming', [TailorOrderController::class, 'incoming'])->name('incoming');
@@ -35,19 +48,6 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::inertia('reports', 'Reports')->name('reports');
         Route::get('tailor/dashboard', [TailorOrderController::class, 'dashboard'])->name('tailor.dashboard');
     });
-
-    Route::inertia('order-form', 'OrderForm')->name('order-form');
-    Route::post('orders', [OrderController::class, 'store'])->name('orders.store');
-    Route::get('orders/{order}/edit', [OrderController::class, 'edit'])->name('orders.edit');
-    Route::put('orders/{order}', [OrderController::class, 'update'])->name('orders.update');
-    Route::get('order-tracking/{order}', [OrderController::class, 'show'])->name('order-tracking');
-    Route::inertia('payment-success', 'PaymentSuccess')->name('payment-success');
-    Route::inertia('payment-failed', 'PaymentFailed')->name('payment-failed');
-    Route::inertia('checkout', 'Checkout')->name('checkout');
 });
-
-Route::get('/designer', function() {
-    return Inertia::render('DesignerPage');
-})->name('designerPage');
 
 require __DIR__.'/settings.php';

@@ -1,4 +1,4 @@
-import { Head, usePage } from '@inertiajs/react';
+import { Head, router, usePage } from '@inertiajs/react';
 import { useEffect, useCallback, useState } from "react";
 import DesignCanvas from "../components/designer/DesignCanvas";
 import LeftSidebar from "../components/designer/LeftSidebar";
@@ -11,8 +11,9 @@ import StudioRulers from "../components/designer/StudioRulers";
 import MultiSidePreviewDock from "../components/designer/MultiSidePreviewDock";
 import PreflightInspectorModal from "../components/designer/PreflightInspectorModal";
 import KeyboardShortcutsPanel from "../components/designer/KeyboardShortcutsPanel";
-import { useDesigner } from "../hooks/use-designer";
-import type { DesignElement } from "../types/designer";
+import { useDesigner, type StickerRecord } from "../hooks/use-designer";
+import type { DesignElement, ProductType } from "../types/designer";
+import type { LibrarySticker } from "../components/designer/AssetLibrary";
 import "../../css/designer.css";
 
 interface DesignerPageProps {
@@ -23,8 +24,24 @@ interface DesignerPageProps {
   onSave?: (dataUrl: string) => void;
 }
 
+type SavedDesign = {
+  id: string;
+  name: string;
+  productType: ProductType;
+  shirtColor: string;
+  elements: DesignElement[];
+  preview: string;
+  orderId: string | null;
+};
+
 export default function DesignerPage({ onSave }: DesignerPageProps) {
-  const { url } = usePage();
+  const { url, props } = usePage<{
+    stickers?: LibrarySticker[];
+    design?: SavedDesign | null;
+    returnTo?: string;
+  }>();
+  const stickers = props.stickers ?? [];
+  const savedDesign = props.design ?? null;
 
   const searchParams = new URLSearchParams(
     url.includes("?") ? url.split("?")[1] : ""
@@ -90,7 +107,7 @@ export default function DesignerPage({ onSave }: DesignerPageProps) {
     exportToDataURL,
     canUndo,
     canRedo,
-  } = useDesigner();
+  } = useDesigner(stickers as StickerRecord[], savedDesign);
 
   // ── Toast helper ─────────────────────────────────────────────────────────
   const showToast = useCallback((msg: string, type: "success" | "error" | "info" = "info") => {
@@ -241,23 +258,24 @@ export default function DesignerPage({ onSave }: DesignerPageProps) {
 
     setIsSaving(true);
 
-    try {
-      sessionStorage.setItem(storageKey, dataUrl);
-
-      if (onSave) {
-        onSave(dataUrl);
-        showToast("Design saved successfully!", "success");
-        return;
-      }
-
-      handleBack();
-    } catch (error) {
-      console.error("Unable to save design: ", error);
-      showToast("Something went wrong while saving. Please try again.", "error");
-    } finally {
-      setIsSaving(false);
-    }
-  }, [exportToDataURL, storageKey, onSave, handleBack, showToast]);
+    router.post("/designs", {
+      id: savedDesign?.id,
+      name: campaignName,
+      product_type: state.productType,
+      shirt_color: state.shirtColor,
+      elements: JSON.parse(JSON.stringify(state.elements)),
+      preview: dataUrl,
+      order_id: searchParams.get("order"),
+      return: props.returnTo ?? "/order-form",
+    }, {
+      onSuccess: () => {
+        onSave?.(dataUrl);
+        showToast("Design saved.", "success");
+      },
+      onError: () => showToast("The design could not be saved.", "error"),
+      onFinish: () => setIsSaving(false),
+    });
+  }, [exportToDataURL, savedDesign?.id, campaignName, state.productType, state.shirtColor, state.elements, campaignId, props.returnTo, onSave, showToast]);
 
   const handleUpdateCommit = useCallback(
     (id: string, attrs: Partial<DesignElement>) => {
@@ -315,6 +333,7 @@ export default function DesignerPage({ onSave }: DesignerPageProps) {
             onColorChange={setShirtColor}
             onAddText={addText}
             onAddShape={addShape}
+            stickers={stickers}
             onAddSticker={addSticker}
             onAddImage={addImage}
             onAddLine={addLine}

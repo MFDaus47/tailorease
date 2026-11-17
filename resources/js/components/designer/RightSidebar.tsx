@@ -5,6 +5,7 @@ import { removeBackground, applyVintageDistress } from "../../utils/ImageFilterU
 import type {
   DesignElement,
   TextElement,
+  ImageElement,
   ShapeElement,
   StickerElement,
   LineElement,
@@ -463,7 +464,7 @@ export default function RightSidebar({
                     aria-selected={isActive}
                   >
                     <span className="layer-icon">
-                      {layer.type === "text" ? "T" : layer.type === "image" ? "🖼" : layer.type === "sticker" ? (layer as StickerElement).emoji : layer.type === "line" ? "─" : "◼"}
+                      {layer.type === "text" ? "T" : layer.type === "image" ? "🖼" : layer.type === "sticker" ? "✦" : layer.type === "line" ? "─" : "◼"}
                     </span>
 
                     {isEditing ? (

@@ -64,7 +64,8 @@ export interface ShapeElement extends BaseElement {
 
 export interface StickerElement extends BaseElement {
   type: "sticker";
-  emoji: string;
+  stickerId: string;
+  svg: string;
 }
 
 export interface LineElement extends BaseElement {

@@ -317,25 +317,24 @@ function KonvaStickerElement({
   transformerRef: React.RefObject<any>;
 }) {
   const nodeRef = useRef<any>(null);
+  const src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(el.svg)}`;
+  const [image] = useImage(src);
 
   useEffect(() => {
     if (isSelected && transformerRef.current && nodeRef.current) {
       transformerRef.current.nodes([nodeRef.current]);
       transformerRef.current.getLayer()?.batchDraw();
     }
-  }, [isSelected, transformerRef]);
+  }, [isSelected, transformerRef, image]);
 
   return (
-    <Text
+    <KonvaImage
       ref={nodeRef}
+      image={image}
       x={el.x}
       y={el.y}
       width={el.width}
       height={el.height}
-      text={el.emoji}
-      fontSize={el.width * 0.75}
-      align="center"
-      verticalAlign="middle"
       rotation={el.rotation}
       opacity={el.opacity}
       visible={el.visible}

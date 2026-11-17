@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import AssetLibrary from "./AssetLibrary";
+import AssetLibrary, { type LibrarySticker } from "./AssetLibrary";
 import type { ShapeType } from "../../types/designer";
 
 const SHIRT_COLOR_GROUPS = [
@@ -39,7 +39,8 @@ interface LeftSidebarProps {
   onColorChange: (color: string) => void;
   onAddText: (text?: string) => void;
   onAddShape: (shape: ShapeType) => void;
-  onAddSticker: (emoji: string) => void;
+  stickers: LibrarySticker[];
+  onAddSticker: (sticker: { id: string; name: string; svg: string }) => void;
   onAddImage: (src: string, name: string) => void;
   onAddLine?: () => void;
   onLoadTemplate?: (templateType: string) => void;
@@ -52,6 +53,7 @@ export default function LeftSidebar({
   onColorChange,
   onAddText,
   onAddShape,
+  stickers,
   onAddSticker,
   onAddImage,
   onAddLine,
@@ -184,6 +186,7 @@ export default function LeftSidebar({
       <div className="flex-1 overflow-y-auto p-3">
         {activeNavTab === "assets" && (
           <AssetLibrary
+            stickers={stickers}
             onAddSticker={onAddSticker}
             onLoadTemplate={(key) => onLoadTemplate?.(key)}
           />
