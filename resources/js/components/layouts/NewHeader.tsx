@@ -1,19 +1,19 @@
-import { usePage } from '@inertiajs/react';
-import { Search, Moon, Sun, Bell, ChevronDown, User } from 'lucide-react';
+import { usePage, router, Link } from '@inertiajs/react';
+import { Search, Moon, Sun, Bell, ChevronDown, User, Settings, LogOut } from 'lucide-react';
 import { useState } from 'react';
 import { getInitials } from '@/components/layouts/NewSidebar';
 import { useAppearance } from '@/hooks/use-appearance';
-import { dummyNotifications  } from '../../../mockdata.ts';
+import { logout } from '@/routes';
 
 
 export default function Header({}) {
-    const { auth } = usePage().props as any;
+    const { auth, notifications = [], unreadNotifications = 0 } = usePage().props as any;
     const user = auth?.user;
+    const notifs = notifications as { id: string; title: string; body: string; time: string; read: boolean }[];
 
     const { appearance, updateAppearance } = useAppearance();
 
-    const [notifs, setNotifs] = useState(dummyNotifications);
-    const unread = notifs.filter(n => !n.read).length;
+    const unread = unreadNotifications as number;
 
 
     const [notifOpen, setNotifOpen] = useState(false);
@@ -67,7 +67,7 @@ export default function Header({}) {
                 <div className="absolute right-0 top-10 w-80 bg-card rounded-xl border border-border shadow-xl z-50">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-border">
                     <span className="text-sm font-semibold text-foreground">Notifications</span>
-                    <span className="text-xs text-indigo-600 font-medium cursor-pointer hover:underline">Mark all read</span>
+                    <button onClick={() => router.post('/notifications/read-all')} className="text-xs text-indigo-600 font-medium hover:underline">Mark all read</button>
                 </div>
                 <div className="max-h-80 overflow-y-auto divide-y divide-border">
                     {notifs.map(n => (
@@ -84,7 +84,7 @@ export default function Header({}) {
                     ))}
                 </div>
                 <div className="px-4 py-2.5 border-t border-border">
-                    <button onClick={() => { onNavigate("notifications"); setNotifOpen(false); }} className="text-xs text-indigo-600 font-medium hover:underline">
+                    <button onClick={() => { router.visit('/notifications'); setNotifOpen(false); }} className="text-xs text-indigo-600 font-medium hover:underline">
                     View all notifications
                     </button>
                 </div>
@@ -110,8 +110,8 @@ export default function Header({}) {
                     <p className="text-xs font-semibold text-foreground">{user?.name}</p>
                     <p className="text-xs text-muted-foreground">{user?.email}</p>
                 </div>
-                {[{ icon: <User size={14} />, label: "Profile" }, { icon: <Settings size={14} />, label: "Settings" }, { icon: <LogOut size={14} />, label: "Sign out" }].map(item => (
-                    <button key={item.label} className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors rounded-lg mx-1" style={{ width: "calc(100% - 8px)" }}>
+                {[{ icon: <User size={14} />, label: "Profile", action: () => router.visit('/settings/profile') }, { icon: <Settings size={14} />, label: "Settings", action: () => router.visit('/settings/profile') }, { icon: <LogOut size={14} />, label: "Sign out", action: () => router.post(logout()) }].map(item => (
+                    <button key={item.label} onClick={item.action} className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-foreground hover:bg-muted transition-colors rounded-lg mx-1" style={{ width: "calc(100% - 8px)" }}>
                     <span className="text-muted-foreground">{item.icon}</span> {item.label}
                     </button>
                 ))}

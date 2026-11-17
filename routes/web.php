@@ -2,22 +2,24 @@
 
 use App\Http\Controllers\DesignController;
 use App\Http\Controllers\MessageController;
+use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\StickerController;
 use App\Http\Controllers\TailorOrderController;
 use Illuminate\Support\Facades\Route;
-use Inertia\Inertia;
+use Laravel\Fortify\Http\Controllers\AuthenticatedSessionController;
 
 Route::inertia('/', 'welcome')->name('home');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', [OrderController::class, 'dashboard'])->name('dashboard');
-
     Route::get('catalog', [ProductController::class, 'catalog'])->name('catalog');
     Route::get('my-orders', [OrderController::class, 'myOrders'])->name('my-orders');
-    Route::inertia('notifications', 'Notifications')->name('notifications');
+    Route::get('notifications', [NotificationController::class, 'index'])->name('notifications');
+    Route::post('notifications/read-all', [NotificationController::class, 'readAll'])->name('notifications.read-all');
+    Route::post('notifications/{notification}/read', [NotificationController::class, 'read'])->name('notifications.read');
 
     Route::get('order-form', [OrderController::class, 'create'])->name('order-form');
     Route::post('orders', [OrderController::class, 'store'])->name('orders.store');
@@ -32,6 +34,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('designer', [DesignController::class, 'editor'])->name('designerPage');
     Route::post('designs', [DesignController::class, 'store'])->name('designs.store');
+
+    Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
 
     Route::middleware('tailor')->group(function () {
         Route::get('incoming', [TailorOrderController::class, 'incoming'])->name('incoming');

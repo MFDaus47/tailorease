@@ -2,6 +2,8 @@
 
 namespace App\Http\Middleware;
 
+use App\Http\Controllers\NotificationController;
+use App\Models\AppNotification;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -35,13 +37,30 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        $user = $request->user();
+        $notifications = [];
+
+        if ($user) {
+            $notifications = AppNotification::query()
+                ->where('user_id', (string) $user->id)
+                ->orderByDesc('created_at')
+                ->limit(8)
+                ->get()
+                ->map(fn (AppNotification $notification) => NotificationController::present($notification))
+                ->all();
+        }
+
         return [
             ...parent::share($request),
             'name' => config('app.name'),
             'auth' => [
-                'user' => $request->user(),
+                'user' => $user,
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
+            'notifications' => $notifications,
+            'unreadNotifications' => $user
+                ? AppNotification::query()->where('user_id', (string) $user->id)->where('read', false)->count()
+                : 0,
         ];
     }
 }
