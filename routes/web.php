@@ -38,7 +38,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('all-orders', [TailorOrderController::class, 'allOrders'])->name('all-orders');
         Route::post('all-orders/{order}/status', [TailorOrderController::class, 'updateStatus'])->name('all-orders.update-status');
         Route::get('all-orders/export', [TailorOrderController::class, 'export'])->name('all-orders.export');
-        Route::inertia('kanban', 'KanbanBoard')->name('kanban');
+        Route::get('kanban', [TailorOrderController::class, 'kanban'])->name('kanban');
         Route::get('manage-catalog', [ProductController::class, 'manage'])->name('manage-catalog');
         Route::post('products', [ProductController::class, 'store'])->name('products.store');
         Route::put('products/{product}', [ProductController::class, 'update'])->name('products.update');

@@ -2,22 +2,29 @@ import { usePage, router } from '@inertiajs/react';
 import { LayoutDashboard, ShoppingBag, Package, Bell, Inbox, List, Layers, Tag, BarChart2, Settings, Scissors } from "lucide-react";
 import type { View } from '@/types';
 
+type SidebarItemData = {
+    view: View;
+    icon: React.ReactNode;
+    label: string;
+    badge?: number;
+    path?: string;
+};
 
-const customerItems = [
-    { view: "dashboard" as View, icon: <LayoutDashboard size={17} />, label: "Dashboard" },
-    { view: "catalog" as View, icon: <ShoppingBag size={17} />, label: "Apparel Catalog" },
-    { view: "my-orders" as View, icon: <Package size={17} />, label: "My Orders" },
-    { view: "notifications" as View, icon: <Bell size={17} />, label: "Notifications", badge: 2 },
+const customerItems: SidebarItemData[] = [
+    { view: "dashboard" as View, path: "/dashboard", icon: <LayoutDashboard size={17} />, label: "Dashboard" },
+    { view: "catalog" as View, path: "/catalog", icon: <ShoppingBag size={17} />, label: "Apparel Catalog" },
+    { view: "my-orders" as View, path: "/my-orders", icon: <Package size={17} />, label: "My Orders" },
+    { view: "notifications" as View, path: "/notifications", icon: <Bell size={17} />, label: "Notifications" },
 ];
 
-const tailorItems = [
-    { view: "dashboard" as View, icon: <LayoutDashboard size={17} />, label: "Dashboard" },
-    { view: "incoming" as View, icon: <Inbox size={17} />, label: "Incoming Orders", badge: 2 },
-    { view: "all-orders" as View, icon: <List size={17} />, label: "All Orders" },
-    { view: "kanban" as View, icon: <Layers size={17} />, label: "Production Board" },
-    { view: "manage-catalog" as View, icon: <Tag size={17} />, label: "Manage Catalog" },
-    { view: "reports" as View, icon: <BarChart2 size={17} />, label: "Reports" },
-    { view: "notifications" as View, icon: <Bell size={17} />, label: "Notifications", badge: 3 },
+const tailorItems: SidebarItemData[] = [
+    { view: "tailor-dashboard" as View, path: "/tailor/dashboard", icon: <LayoutDashboard size={17} />, label: "Dashboard" },
+    { view: "incoming" as View, path: "/incoming", icon: <Inbox size={17} />, label: "Incoming Orders" },
+    { view: "all-orders" as View, path: "/all-orders", icon: <List size={17} />, label: "All Orders" },
+    { view: "kanban" as View, path: "/kanban", icon: <Layers size={17} />, label: "Production Board" },
+    { view: "manage-catalog" as View, path: "/manage-catalog", icon: <Tag size={17} />, label: "Manage Catalog" },
+    { view: "reports" as View, path: "/reports", icon: <BarChart2 size={17} />, label: "Reports" },
+    { view: "notifications" as View, path: "/notifications", icon: <Bell size={17} />, label: "Notifications" },
 ];
 
 type SidebarProps = {
@@ -34,8 +41,14 @@ export default function Sidebar({ user }: SidebarProps) {
         return null;
     }
 
-
-    const  isActive = (view: View) => url.includes(view);
+    const isActive = (_view: View, path?: string) => {
+        const current = url.split('?')[0];
+        const target = path ?? '';
+        if (target === '/dashboard') {
+            return current === '/dashboard';
+        }
+        return current === target || current.startsWith(`${target}/`);
+    };
 
     const role = user?.role ?? "customer";
 
@@ -61,8 +74,8 @@ export default function Sidebar({ user }: SidebarProps) {
                     <SidebarItem
                         key={item.view}
                         item={item}
-                        active={isActive(item.view)}
-                        onClick={() => router.visit(`/${item.view}`)}
+                        active={isActive(item.view, item.path)}
+                        onClick={() => router.visit(item.path ?? `/${item.view}`)}
                     />
                 ))}
             </nav>
@@ -75,12 +88,7 @@ export default function Sidebar({ user }: SidebarProps) {
 }
 
 type SidebarItemProps = {
-    item: {
-        view: View;
-        icon: React.ReactNode;
-        label: string;
-        badge?: number;
-    };
+    item: SidebarItemData;
     active: boolean;
     onClick: () => void;
 };
@@ -109,7 +117,7 @@ function SidebarItem({ item, active, onClick }: SidebarItemProps) {
     );
 }
 
-function SidebarFooter({user}) {
+function SidebarFooter({user}: {user: {name: string; role: string}}) {
     return (
       <div className="px-3 py-4 border-t" style={{ borderColor: "rgba(99,102,241,0.2)" }}>
         <div className="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-indigo-500/10 cursor-pointer group">

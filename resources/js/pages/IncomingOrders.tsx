@@ -231,17 +231,21 @@ export default function IncomingOrders({ onNavigate, onSelectOrder }: IncomingOr
                                         );
                                     })()}
 
-                                    <div className="mt-3 grid grid-cols-3 gap-3">
-                                        {[
-                                            ['Product', order.product],
-                                            ['Size', order.size],
-                                            ['Quantity', `×${order.quantity}`],
-                                        ].map(([label, value]) => (
-                                            <div key={label} className="bg-muted rounded-lg p-2.5">
-                                                <p className="text-xs text-muted-foreground">{label}</p>
-                                                <p className="text-xs font-semibold text-foreground mt-0.5">{value}</p>
+                                    <div className="mt-3 space-y-2">
+                                        <div className="bg-muted rounded-lg p-3">
+                                            <p className="text-xs text-muted-foreground uppercase tracking-tight font-semibold mb-1">Items Summary</p>
+                                            <div className="space-y-1">
+                                                {order.product.includes(',')
+                                                    ? order.product.split(',').map((p, i) => (
+                                                        <p key={i} className="text-sm font-bold text-foreground">
+                                                            {p.trim()}
+                                                        </p>
+                                                    ))
+                                                    : <p className="text-sm font-bold text-foreground">{order.product}</p>
+                                                }
+                                                <p className="text-xs text-indigo-600 font-semibold">{order.quantity} pieces total</p>
                                             </div>
-                                        ))}
+                                        </div>
                                     </div>
 
                                     {order.notes && (
