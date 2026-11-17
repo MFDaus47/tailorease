@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\DesignController;
+use App\Http\Controllers\MessageController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\StickerController;
@@ -17,7 +18,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('my-orders', [OrderController::class, 'myOrders'])->name('my-orders');
     Route::inertia('notifications', 'Notifications')->name('notifications');
 
-    Route::inertia('order-form', 'OrderForm')->name('order-form');
+    Route::get('order-form', [OrderController::class, 'create'])->name('order-form');
     Route::post('orders', [OrderController::class, 'store'])->name('orders.store');
     Route::get('orders/{order}/edit', [OrderController::class, 'edit'])->name('orders.edit');
     Route::put('orders/{order}', [OrderController::class, 'update'])->name('orders.update');
@@ -25,6 +26,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::inertia('payment-success', 'PaymentSuccess')->name('payment-success');
     Route::inertia('payment-failed', 'PaymentFailed')->name('payment-failed');
     Route::inertia('checkout', 'Checkout')->name('checkout');
+    Route::post('orders/{order}/messages', [MessageController::class, 'store'])->name('orders.messages.store');
 
     Route::get('designer', [DesignController::class, 'editor'])->name('designerPage');
     Route::post('designs', [DesignController::class, 'store'])->name('designs.store');

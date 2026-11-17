@@ -14,6 +14,7 @@ class StoreOrderRequest extends FormRequest
     public function rules(): array
     {
         return [
+            // Top-level summary fields (derived from items for backward compat)
             'product_id' => 'nullable|string',
             'product_name' => 'required|string|max:255',
             'sizes' => 'required|array|min:1',
@@ -24,7 +25,18 @@ class StoreOrderRequest extends FormRequest
             'due_date' => 'required|date|after:today',
             'notes' => 'nullable|string',
             'has_design' => 'boolean',
+            'design_id' => 'nullable|string',
+            'design_file' => 'nullable|file|max:10240',
             'design_file_path' => 'nullable|string',
+
+            // Multi-product items array
+            'items' => 'nullable|array',
+            'items.*.product_id' => 'nullable|string',
+            'items.*.product_name' => 'required_with:items|string|max:255',
+            'items.*.sizes' => 'required_with:items|array|min:1',
+            'items.*.total_quantity' => 'required_with:items|integer|min:1',
+            'items.*.base_price' => 'required_with:items|numeric|min:0',
+            'items.*.subtotal' => 'required_with:items|numeric|min:0',
         ];
     }
 }

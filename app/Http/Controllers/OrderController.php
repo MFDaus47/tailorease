@@ -3,147 +3,229 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreOrderRequest;
+use App\Models\Design;
+use App\Models\Message;
 use App\Models\Order;
+use App\Models\Product;
+use App\Support\Notifier;
+use App\Support\OrderFormatter;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
+use Inertia\Response;
 
 class OrderController extends Controller
 {
-    /* -------------------------------------------------------------------------------
-
-        SHARED FUNCTIONS
-
-     ------------------------------------------------------------------------------- */
-
-    public function dashboard(Request $request)
+    public function dashboard(Request $request): RedirectResponse|Response
     {
-
         $user = $request->user();
-        $orders = [];
 
         if ($user && $user->getAttribute('role') === 'tailor') {
-            $orders = Order::with('customer')
-                ->orderByDesc('created_at')
-                ->take(5)
-                ->get()
-                ->map(fn (Order $o) => self::formatOrder($o))
-                ->all();
-        } else {
-            $orders = $user->orders()
+            return redirect()->route('tailor.dashboard');
+        }
+
+        $orders = $user->orders()
+            ->with('customer')
             ->orderByDesc('created_at')
             ->get()
-            ->map(fn (Order $o) => self::formatOrder($o))
-                ->all();
-        }
+            ->map(fn (Order $order) => OrderFormatter::forCustomer($order))
+            ->all();
 
         return Inertia::render('CustomerDashboard', [
             'orders' => $orders,
         ]);
     }
-    public function show(Request $request, Order $order)
+
+    public function create(Request $request): Response
     {
-        $isTailor = $request->user()?->getAttribute('role') === 'tailor';
-
-        $order = $isTailor
-            ? Order::findOrFail($order->id)
-            : $request->user()->orders()->findOrFail($order->id);
-
-        return Inertia::render('OrderTracking', [
-            'order' => self::formatOrder($order),
+        return Inertia::render('OrderForm', [
+            'products' => $this->products(),
+            'design' => $this->designFor($request, $request->query('design')),
+            'productId' => $request->query('product'),
         ]);
     }
 
-        /* -------------------------------------------------------------------------------
+    public function show(Request $request, Order $order): Response
+    {
+        $order = $this->visibleOrder($request, $order);
+        $messages = Message::query()
+            ->where('order_id', (string) $order->id)
+            ->orderBy('created_at')
+            ->get()
+            ->map(fn (Message $message) => [
+                'id' => (string) $message->id,
+                'sender' => (string) $message->sender_role,
+                'text' => (string) $message->body,
+                'time' => $message->created_at?->format('M d, g:i A') ?? '',
+            ])
+            ->all();
 
-        FUNCTIONS FOR CUSTOMERS
+        return Inertia::render('OrderTracking', [
+            'order' => OrderFormatter::forCustomer($order),
+            'messages' => $messages,
+        ]);
+    }
 
-     ------------------------------------------------------------------------------- */
-
-
-    public function myOrders(Request $request)
+    public function myOrders(Request $request): Response
     {
         $orders = $request->user()->orders()
+            ->with('customer')
             ->orderByDesc('created_at')
             ->get()
-            ->map(fn (Order $o) => self::formatOrder($o))
+            ->map(fn (Order $order) => OrderFormatter::forCustomer($order))
             ->all();
 
         return Inertia::render('MyOrders', [
             'orders' => $orders,
-            ]);
+        ]);
     }
 
     public function store(StoreOrderRequest $request): RedirectResponse
     {
-        $validated = $request->validated();
+        $validated = $this->payload($request);
         $validated['customer_id'] = Auth::id();
         $validated['status'] = 'pending';
 
-        Order::create($validated);
+        $order = Order::create($validated);
+        $this->attachDesign($request, $order);
+
+        Notifier::to(
+            (string) $order->customer_id,
+            'order',
+            'Order submitted',
+            "{$order->product_name} is waiting for the tailor to review it.",
+            (string) $order->id,
+        );
+        Notifier::toTailors(
+            'order',
+            'New order',
+            "{$request->user()->name} submitted {$order->product_name}.",
+            (string) $order->id,
+        );
 
         return redirect()
             ->route('my-orders')
             ->with('success', 'Order submitted successfully!');
     }
 
-    public function edit(Request $request, Order $order)
+    public function edit(Request $request, Order $order): Response
     {
         $order = $request->user()->orders()->findOrFail($order->id);
-        
+        $design = $order->design_id
+            ? $this->designFor($request, (string) $order->design_id)
+            : $this->designFor($request, $request->query('design'));
+
         return Inertia::render('OrderForm', [
+            'products' => $this->products(),
             'orderToEdit' => $order,
+            'design' => $design,
+            'productId' => $order->product_id,
         ]);
     }
 
     public function update(StoreOrderRequest $request, Order $order): RedirectResponse
     {
         $order = $request->user()->orders()->findOrFail($order->id);
-        
-        $validated = $request->validated();
-        $validated['status'] = 'pending';
 
-        $order->update($validated);
+        if (! in_array($order->status, ['pending', 'rejected'], true)) {
+            abort(409, 'This order can no longer be edited.');
+        }
+
+        $order->update($this->payload($request, $order) + ['status' => 'pending']);
+        $this->attachDesign($request, $order);
+
+        Notifier::toTailors(
+            'order',
+            'Order updated',
+            "{$request->user()->name} resubmitted {$order->product_name}.",
+            (string) $order->id,
+        );
 
         return redirect()
             ->route('my-orders')
             ->with('success', 'Order resubmitted successfully!');
     }
 
-    private static function formatOrder(Order $order): array
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function products(): array
     {
-        $sizes = $order->sizes;
+        return Product::query()
+            ->available()
+            ->orderBy('name')
+            ->get()
+            ->map(fn (Product $product) => ProductController::present($product))
+            ->all();
+    }
 
-        if (is_array($sizes) && count($sizes) > 0) {
-            if (array_is_list($sizes)) {
-                $sizeLabel = implode(', ', array_filter($sizes));
-            } else {
-                $sizeLabel = implode(', ', array_map(
-                    fn ($size, $quantity) => ((int) $quantity > 1) ? "{$size} ×{$quantity}" : (string) $size,
-                        array_keys(array_filter($sizes, fn ($quantity) => (int) $quantity > 0)),
-                        array_values(array_filter($sizes, fn ($quantity) => (int) $quantity > 0))
-                ));
-            }
-        } else {
-        $sizeLabel = 'N/A';
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function designFor(Request $request, mixed $id): ?array
+    {
+        if (! is_string($id) || $id === '') {
+            return null;
         }
 
-        return [
-        'id' => (string) $order->id,
-        'product' => (string) $order->product_name,
-        'customer_name' => (string) $order->customer->name ??  'Unknown Customer',
-        'customer_email' => (string) $order->customer->email ?? 'N/A',
-        'quantity' => (int) $order->total_quantity,
-        'size' => $sizeLabel ?: 'N/A',
-        'total' => (float) $order->total,
-        'deposit' => (float) $order->deposit,
-        'due_date' => $order->due_date?->format('Y-m-d'),
-        'deliveryDate' => $order->due_date?->format('M d, Y'),
-        'date' => $order->created_at->format('M d, Y'),
-        'status' => (string) $order->status,
-        'notes' => $order->notes ?: null,
-        'hasDesign' => (bool) $order->has_design,
-        ];
+        $design = Design::query()->find($id);
+
+        if (! $design) {
+            return null;
+        }
+
+        $owns = (string) $design->user_id === (string) $request->user()->id;
+        $tailor = $request->user()->getAttribute('role') === 'tailor';
+        abort_unless($owns || $tailor, 403);
+
+        return DesignController::present($design);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function payload(StoreOrderRequest $request, ?Order $existing = null): array
+    {
+        $validated = $request->safe()->except(['design_file']);
+        $validated['has_design'] = (bool) ($validated['has_design'] ?? false);
+
+        if ($request->hasFile('design_file')) {
+            $stored = $request->file('design_file')->store('designs', 'public');
+            $validated['design_file_path'] = '/storage/'.$stored;
+            $validated['has_design'] = true;
+        } elseif (! empty($validated['design_id'])) {
+            $design = Design::query()->find($validated['design_id']);
+            abort_unless($design && (string) $design->user_id === (string) $request->user()->id, 403);
+            $validated['design_file_path'] = $design->preview_path;
+            $validated['has_design'] = true;
+        } elseif ($existing) {
+            $validated['design_file_path'] = $existing->design_file_path;
+            $validated['design_id'] = $existing->design_id;
+            $validated['has_design'] = (bool) $existing->has_design;
+        }
+
+        return $validated;
+    }
+
+    private function attachDesign(Request $request, Order $order): void
+    {
+        if (! $order->design_id) {
+            return;
+        }
+
+        Design::query()
+            ->where('user_id', (string) $request->user()->id)
+            ->whereKey($order->design_id)
+            ->update(['order_id' => (string) $order->id]);
+    }
+
+    private function visibleOrder(Request $request, Order $order): Order
+    {
+        $isTailor = $request->user()?->getAttribute('role') === 'tailor';
+
+        return $isTailor
+            ? Order::with('customer')->findOrFail($order->id)
+            : $request->user()->orders()->with('customer')->findOrFail($order->id);
     }
 }

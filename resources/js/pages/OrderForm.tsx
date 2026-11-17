@@ -6,8 +6,6 @@ import {
 import { useState, useRef, useEffect } from 'react';
 import ShirtViewer from '@/components/apparel/ShirtViewer';
 import OpenDesignerButton from '@/components/designer/OpenDesignerButton';
-import type { View } from '@/types';
-import { dummyProducts } from '../../mockdata';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -236,13 +234,14 @@ return <div key={i} />;
 
 // ─── Product Picker Modal ─────────────────────────────────────────────────────
 
-function ProductPickerModal({ current, onSelect, onClose }: {
+function ProductPickerModal({ products, current, onSelect, onClose }: {
+    products: Product[];
     current: string[];
     onSelect: (p: Product) => void;
     onClose: () => void;
 }) {
     const [search, setSearch] = useState('');
-    const available = dummyProducts.filter(
+    const available = products.filter(
         p => p.available && (search === '' || p.name.toLowerCase().includes(search.toLowerCase()))
     );
 
@@ -416,10 +415,21 @@ const emptyQtys = (): Record<BulkSize, number> => ({ XS: 0, S: 0, M: 0, L: 0, XL
 let uidCounter = 0;
 const newUid = () => `item-${++uidCounter}`;
 
-function buildInitialItems(product: Product, orderToEdit?: any): OrderItem[] {
+function buildInitialItems(product: Product, orderToEdit: any, products: Product[]): OrderItem[] {
     if (orderToEdit?.items && Array.isArray(orderToEdit.items) && orderToEdit.items.length > 0) {
         return orderToEdit.items.map((it: any) => {
-            const prod = dummyProducts.find((p: any) => p.id === it.product_id) ?? dummyProducts[0] as Product;
+            const prod = products.find((p) => p.id === it.product_id) ?? {
+                id: String(it.product_id ?? ''),
+                name: it.product_name,
+                category: '',
+                basePrice: Number(it.base_price ?? 0),
+                depositRate: 0.5,
+                image: '',
+                description: '',
+                available: true,
+                rating: 0,
+                orders: 0,
+            };
 
             return { uid: newUid(), product: prod, sizes: it.sizes ?? emptyQtys() };
         });
@@ -431,10 +441,16 @@ function buildInitialItems(product: Product, orderToEdit?: any): OrderItem[] {
 
 // ─── Main Component ───────────────────────────────────────────────────────────
 
-export default function OrderForm({ product, orderToEdit, onNavigate }: { product?: Product | null; orderToEdit?: any; onNavigate?: (v: View) => void }) {
+export default function OrderForm({ product, orderToEdit, products = [], design = null, productId = null }: {
+    product?: Product | null;
+    orderToEdit?: any;
+    products?: Product[];
+    design?: { id: string; preview: string } | null;
+    productId?: string | null;
+}) {
     const [color, setColor] = useState('#ffffff');
     const [designFile, setDesignFile] = useState<File | null>(null);
-    const [designUrl, setDesignUrl] = useState<string | null>(null);
+    const [designUrl, setDesignUrl] = useState<string | null>(design?.preview ?? orderToEdit?.design_file_path ?? null);
     const [fileName, setFileName] = useState<string | null>(orderToEdit?.design_file_path || null);
     const [notes, setNotes] = useState(orderToEdit?.notes || '');
     const [dueDate, setDueDate] = useState<string | null>(
@@ -446,26 +462,24 @@ export default function OrderForm({ product, orderToEdit, onNavigate }: { produc
     const fileRef = useRef<HTMLInputElement>(null);
 
     // Resolve initial product
-    const getInitialProduct = (): Product => {
+    const getInitialProduct = (): Product | undefined => {
         if (product) {
 return product;
 }
 
         const params = new URLSearchParams(window.location.search);
-        const productId = params.get('product');
+        const requested = productId || params.get('product');
 
-        if (productId) {
-            const found = dummyProducts.find((p: any) => p.id === productId);
-
-            if (found) {
-return found as Product;
-}
+        if (requested) {
+            const found = products.find((item) => item.id === requested);
+            if (found) return found;
         }
 
-        return dummyProducts[0] as Product;
+        return products[0];
     };
 
-    const [orderItems, setOrderItems] = useState<OrderItem[]>(() => buildInitialItems(getInitialProduct(), orderToEdit));
+    const initialProduct = getInitialProduct();
+    const [orderItems, setOrderItems] = useState<OrderItem[]>(() => initialProduct ? buildInitialItems(initialProduct, orderToEdit, products) : []);
 
     // ── Derived totals ──────────────────────────────────────────────────────
     const allItemTotals = orderItems.map(item => {
@@ -537,40 +551,42 @@ return;
             remaining_balance: remaining,
             due_date:          dueDate,
             notes:             notes || null,
-            has_design:        !!fileName,
-            design_file_path:  fileName || null,
+            has_design:        !!(design?.id || designFile || fileName),
+            design_id:         design?.id ?? orderToEdit?.design_id ?? null,
+            design_file:       designFile,
             items,
         };
 
-        const goBack = () => {
- if (onNavigate) {
-onNavigate('my-orders');
-} else {
-router.visit('/my-orders');
-} 
-};
+        const options = { forceFormData: true, onFinish: () => setProcessing(false) };
 
         if (orderToEdit) {
-            router.put(`/orders/${orderToEdit.id}`, payload, { onSuccess: goBack, onFinish: () => setProcessing(false) });
+            router.post(`/orders/${orderToEdit.id}`, { ...payload, _method: 'put' }, options);
         } else {
-            router.post('/orders', payload, { onSuccess: goBack, onFinish: () => setProcessing(false) });
+            router.post('/orders', payload, options);
         }
     };
 
     const goToCatalog = () => {
- if (onNavigate) {
-onNavigate('catalog');
-} else {
-router.visit('/catalog');
-} 
-};
+        router.visit('/catalog');
+    };
 
     const alreadyAddedIds = orderItems.map(it => it.product.id);
+
+    if (!initialProduct) {
+        return (
+            <div className="space-y-4">
+                <h1 className="text-xl font-bold text-foreground">New Order</h1>
+                <p className="text-sm text-muted-foreground">No products are available to order yet.</p>
+                <button onClick={goToCatalog} className="px-4 py-2 text-sm border border-border rounded-lg">Back to catalog</button>
+            </div>
+        );
+    }
 
     return (
         <div className="space-y-5">
             {showPicker && (
                 <ProductPickerModal
+                    products={products}
                     current={alreadyAddedIds}
                     onSelect={handleAddProduct}
                     onClose={() => setShowPicker(false)}
@@ -685,9 +701,9 @@ router.visit('/catalog');
                         <h3 className="text-sm font-semibold text-foreground mb-1">3D Viewer <span className="text-muted-foreground font-normal">(Optional)</span></h3>
                         <p className="text-xs text-muted-foreground mb-3">Preview your shirt color and design placement.</p>
                         <OpenDesignerButton
-                            campaignId={orderToEdit?.id}
+                            orderId={orderToEdit?.id}
+                            designId={design?.id ?? orderToEdit?.design_id}
                             campaignName={orderItems[0]?.product?.name ?? "Order Design"}
-                            onDesignSaved={(url) => setDesignUrl(url)}
                         />
                         <div className="mt-3">
                             <ShirtViewer color={color} designUrl={designUrl} />

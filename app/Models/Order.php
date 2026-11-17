@@ -20,6 +20,7 @@ class Order extends Model
         'due_date',
         'notes',
         'has_design',
+        'design_id',
         'design_file_path',
         'items',
         'status',
