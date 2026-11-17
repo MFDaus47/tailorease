@@ -2,18 +2,23 @@ import { router } from '@inertiajs/react';
 import { Search, Star } from 'lucide-react';
 import { useState } from 'react';
 import { Card } from '@/components/ui/card';
-import type { View } from '@/types';
-// 2. Imported dummyCategories, dummyProducts, and Product type definition
-import { dummyCategories, dummyProducts } from '../../mockdata';
+type CatalogProduct = {
+    id: string;
+    name: string;
+    category: string;
+    image: string;
+    description: string;
+    basePrice: number;
+    rating: number;
+    available: boolean;
+};
 
-
-export default function ApparelCatalog({}) {
+export default function ApparelCatalog({ products = [] }: { products?: CatalogProduct[] }) {
     const [search, setSearch] = useState("");
-    const categories = dummyCategories;
+    const categoryNames = ["All", ...Array.from(new Set(products.map((product) => product.category)))];
     const [selectedCategory, setSelectedCategory] = useState("All");
 
-    // 3. Restored the filtering logic using dummyProducts and your updated state variable name
-    const filtered = dummyProducts.filter(p =>
+    const filtered = products.filter(p =>
         (selectedCategory === "All" || p.category === selectedCategory) &&
         (search === "" || p.name.toLowerCase().includes(search.toLowerCase()))
     );
@@ -39,13 +44,13 @@ export default function ApparelCatalog({}) {
                     />
                 </div>
                 <div className="flex items-center gap-1.5 bg-card rounded-lg border border-border p-1">
-                    {categories.map((cat, index) => (
+                    {categoryNames.map((categoryName) => (
                         <button
-                            key={index}
-                            onClick={() => setSelectedCategory(cat.categoryName)}
-                            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${selectedCategory === cat.categoryName ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+                            key={categoryName}
+                            onClick={() => setSelectedCategory(categoryName)}
+                            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-all ${selectedCategory === categoryName ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
                         >
-                            {cat.categoryName}
+                            {categoryName}
                         </button>
                     ))}
                 </div>
@@ -88,7 +93,6 @@ export default function ApparelCatalog({}) {
                                     Order Now
                                 </button>
                             </div>
-                            <p className="text-xs text-muted-foreground mt-2">{product.orders} orders completed</p>
                         </div>
                     </Card>
                 ))}

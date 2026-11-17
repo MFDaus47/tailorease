@@ -3,7 +3,6 @@
 namespace Database\Seeders;
 
 use App\Models\Product;
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 
 class ProductSeeder extends Seeder
@@ -20,7 +19,8 @@ class ProductSeeder extends Seeder
                 'category' => 'Collarless',
                 'image_path' => '/products-images/Collarless-shirt-short-sleeve.jpg',
                 'base_price' => 35,
-                'available' => 1,
+                'deposit_rate' => 0.5,
+                'available' => true,
                 'rating' => 4.9,
             ],
             [
@@ -29,7 +29,8 @@ class ProductSeeder extends Seeder
                 'category' => 'Shirts',
                 'image_path' => '/products-images/Collared-retro.jpg',
                 'base_price' => 45,
-                'available' => 1,
+                'deposit_rate' => 0.5,
+                'available' => true,
                 'rating' => 4.8,
             ],
             [
@@ -38,7 +39,8 @@ class ProductSeeder extends Seeder
                 'category' => 'V-Neck',
                 'image_path' => '/products-images/Vneck-nfl.jpg',
                 'base_price' => 45,
-                'available' => 1,
+                'deposit_rate' => 0.5,
+                'available' => true,
                 'rating' => 4.7,
             ],
             [
@@ -47,7 +49,8 @@ class ProductSeeder extends Seeder
                 'category' => 'Collared',
                 'image_path' => '/products-images/Collar-polo.jpg',
                 'base_price' => 35,
-                'available' => 1,
+                'deposit_rate' => 0.5,
+                'available' => true,
                 'rating' => 5.0,
             ],
             [
@@ -56,7 +59,8 @@ class ProductSeeder extends Seeder
                 'category' => 'Muslimah',
                 'image_path' => '/products-images/Muslimah.jpg',
                 'base_price' => 35,
-                'available' => 1,
+                'deposit_rate' => 0.5,
+                'available' => true,
                 'rating' => 4.6,
             ],
             [
@@ -65,15 +69,16 @@ class ProductSeeder extends Seeder
                 'category' => 'Suits',
                 'image_path' => 'https://images.unsplash.com/photo-1617137968427-85924c800a22?w=400&h=280&fit=crop&auto=format',
                 'base_price' => 240,
-                'available' => 0,
+                'deposit_rate' => 0.5,
+                'available' => false,
                 'rating' => 4.7,
             ],
         ];
 
-        foreach($products as $product) {
+        foreach ($products as $product) {
             Product::updateOrCreate(
                 [
-                    'name' => $product['name']
+                    'name' => $product['name'],
                 ],
                 $product
             );
