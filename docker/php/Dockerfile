@@ -9,9 +9,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libicu-dev \
         libonig-dev \
     && docker-php-ext-install bcmath intl mbstring pcntl zip \
-    && pecl install mongodb \
-    && docker-php-ext-enable mongodb \
     && rm -rf /var/lib/apt/lists/*
+
+# PECL's own downloader was saving a truncated mongodb-2.5.7.tgz and then failing to unpack it.
+RUN curl -fL --retry 5 --retry-all-errors -o /tmp/mongodb.tgz https://pecl.php.net/get/mongodb-2.5.7.tgz \
+    && test "$(stat -c%s /tmp/mongodb.tgz)" -eq 2284321 \
+    && pecl install /tmp/mongodb.tgz \
+    && docker-php-ext-enable mongodb \
+    && rm -f /tmp/mongodb.tgz
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
