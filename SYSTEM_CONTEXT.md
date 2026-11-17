@@ -4,7 +4,7 @@
 > Every AI agent, developer, or contributor MUST read this file before modifying the system.
 > When changes are made, the agent MUST update the relevant sections of this file.
 >
-> **Last updated:** 2026-11-02
+> **Last updated:** 2026-11-17
 > **System version:** Latest (Laravel 13 + React 19 + Inertia 3)
 
 ---
@@ -195,12 +195,12 @@ Connection settings: `DB_CONNECTION=mongodb`, `MONGODB_URI`, `MONGODB_DATABASE`.
 Fields: `name`, `email` (unique), `role` (`customer` or `tailor`, default `customer`, indexed), `email_verified_at`, `password`, `two_factor_secret`, `two_factor_recovery_codes`, `two_factor_confirmed_at`, `remember_token`, timestamps. `role` is fillable. Deleting a user deletes that user's orders.
 
 #### `orders`
-Fields: `customer_id`, `product_id`, `order_name`, `product_name`, `sizes` (native array), `total_quantity`, `total`, `deposit`, `remaining_balance`, `due_date`, `notes`, `has_design` (default false), `design_file_path`, `items` (native array), `status` (default `pending`), timestamps. Indexes: `customer_id`, `product_id`, `status`.
+Fields: `customer_id`, `product_id`, `order_name`, `product_name`, `sizes` (native array), `total_quantity`, `total`, `deposit`, `remaining_balance`, `due_date`, `notes`, `has_design` (default false), `design_id`, `design_file_path` (public preview URL), `items` (native array), `status` (default `pending`), timestamps. Indexes: `customer_id`, `product_id`, `status`.
 
 `status` is a string. Allowed values, enforced in `TailorOrderController::updateStatus()`, are `pending`, `accepted`, `deposit_paid`, `in_production`, `quality_check`, `ready`, `completed`, and `rejected`.
 
 #### `products`
-Fields: `name`, `description`, `category` (indexed), `image_path`, `base_price`, `available` (default true), `rating` (default 0), timestamps.
+Fields: `name`, `description`, `category` (indexed), `image_path`, `base_price`, `deposit_rate` (default `0.5`), `available` (default true), `rating` (default 0), timestamps. Customer catalog and the order form use `Product::available()`, which matches both boolean `true` and integer `1`. The original seeder wrote `1` and `0`, and MongoDB does not treat those as booleans, so a strict `where('available', true)` returned no products. Manage Catalog lists every product. The seeder now writes real booleans.
 
 #### `passkeys`
 WebAuthn credentials. Unique `credential_id`, index on `user_id`. The app model `App\Models\Passkey` extends Laravel's passkey model and uses the MongoDB document trait. `AppServiceProvider` registers it with `Passkeys::usePasskeyModel()`.
@@ -210,6 +210,21 @@ WebAuthn credentials. Unique `credential_id`, index on `user_id`. The app model 
 - `sessions` — TTL index on `expires_at`
 - `cache`, `cache_locks` — used by the MongoDB cache driver
 - `jobs`, `job_batches` — used by the MongoDB queue driver
+
+#### `stickers`
+Fields: `name`, `slug` (unique), `category` (indexed), `tags` (array), `svg` (markup string), `active` (indexed, default true), timestamps. The designer loads active stickers. A design element stores a copy of the SVG, so hiding a sticker later does not blank an existing design.
+
+#### `designs`
+Fields: `user_id` (indexed), `order_id` (indexed, nullable until the order is submitted), `name`, `product_type`, `shirt_color`, `elements` (designer JSON, including sticker SVG snapshots), `preview_path`, timestamps.
+
+#### `payments`
+Fields: `order_id` (indexed), `amount`, `kind` (`deposit` or `balance`), `recorded_by` (user id), timestamps. No card data is stored.
+
+#### `messages`
+Fields: `order_id` (indexed), `user_id`, `body`, `sender_role` (`customer` or `tailor`), timestamps.
+
+#### `notifications`
+Fields: `user_id` (indexed), `type` (`order`, `payment`, or `message`), `title`, `body`, `order_id`, `read` (indexed, default false), timestamps. The model is `App\Models\AppNotification`.
 
 ### Eloquent Relationships
 
@@ -358,8 +373,10 @@ Validates order creation/update:
 | `settings/security.tsx` | security.edit | settings/security | Security settings (2FA, passkeys) |
 | `settings/appearance.tsx` | appearance.edit | settings/appearance | Appearance settings |
 
-### CustomerDashboard.tsx — THE MAIN ROUTER
-This is the **most important** frontend file. It is NOT a simple page — it is a **client-side router** that renders different sub-views based on state:
+### CustomerDashboard.tsx
+`/dashboard` renders only the customer home. Tailors who open `/dashboard` are redirected to `/tailor/dashboard`. Catalog, my orders, tracking, checkout, payment results, and the production board are separate Inertia pages. Links use `router.visit` with the product or order id in the URL. Role comes from `auth.user.role`.
+
+The old client-side view switch is gone. Historical note of the views it used to swap:
 
 ```tsx
 // Internal View type
@@ -417,7 +434,7 @@ It has a `role` state (`"customer"` | `"tailor"`) and a `view` state. The `rende
 ### Route Protection
 - `auth` middleware on all authenticated routes (`routes/web.php:11`)
 - `verified` middleware on most routes (requires email verification)
-- Tailor routes additionally check `role === 'tailor'` via `TailorOrderController::ensureTailor()`
+- Tailor routes use the `tailor` middleware (`EnsureUserIsTailor`), which aborts with 403 unless `role` is `tailor`
 
 ### Role-Based Access
 | Feature | Customer | Tailor |
@@ -459,7 +476,7 @@ pending → accepted → deposit_paid → in_production → quality_check → re
 
 ### Business Rules
 1. Only `pending` orders can be accepted or rejected
-2. Status can be freely updated by tailors at any point (no validation of state transitions)
+2. A tailor can move an order only to the next status: `pending → accepted → deposit_paid → in_production → quality_check → ready → completed`. Reject is allowed only from `pending`. A deposit payment is the customer path from `accepted` to `deposit_paid`. A balance payment is recorded while the order is `ready` and does not change the status.
 3. When an order is edited by a customer, status resets to `pending`
 4. Deposit rate is currently hardcoded per product (50% default), but the system supports per-product rates
 5. `remaining_balance = total - deposit`
@@ -498,7 +515,7 @@ interface DesignerState {
 | `text` | `TextElement` | Text with font, size, color, stroke, shadow, alignment, transform |
 | `image` | `ImageElement` | Raster image with src |
 | `shape` | `ShapeElement` | rect, circle, triangle, star, diamond, hexagon |
-| `sticker` | `StickerElement` | Emoji drawn as Konva text. `wrap` is `"none"` and font size is 68% of the box, because the default word wrap deletes a glyph that is wider than the box and the sticker then looks placed but paints nothing. |
+| `sticker` | `StickerElement` | SVG from the `stickers` collection, stored on the element as `stickerId` plus `svg`, and drawn as a Konva image. The same pixels are in the canvas export that becomes the 3D shirt texture. |
 | `line` | `LineElement` | Vector line with points, stroke, dash |
 
 ### Canvas Architecture
@@ -524,8 +541,8 @@ interface DesignerState {
 4. User adds elements via left sidebar tools
 5. Each mutation pushes to history stack (max 50 entries)
 6. On element changes, `sync3dTexture()` exports canvas to PNG and updates 3D texture
-7. Save: exports canvas to JPEG, stores in `sessionStorage` with key `tailorease_design_url_{campaignId}`
-8. If `onSave` callback provided (from OrderForm), passes data URL back to parent
+7. Save posts the element JSON and a PNG/JPEG preview to `POST /designs`. The preview file is stored on the `public` disk. The browser returns to the `return` path with `?design={id}`.
+8. Submitting the order stores `design_id` and copies the preview path onto `design_file_path`.
 
 ### Templates
 Built-in presets: `esports`, `varsity`, `cyberpunk`, `vintage`. Each is a predefined array of `DesignElement` objects.
@@ -567,9 +584,9 @@ Route::inertia('/', 'welcome')->name('home');
 // Authenticated + Verified
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('dashboard', [OrderController::class, 'dashboard'])->name('dashboard');
-    Route::inertia('catalog', 'ApparelCatalog')->name('catalog');
+    Route::get('catalog', [ProductController::class, 'catalog'])->name('catalog');
     Route::get('my-orders', [OrderController::class, 'myOrders'])->name('my-orders');
-    Route::inertia('notifications', 'Notifications')->name('notifications');
+    Route::get('notifications', [NotificationController::class, 'index'])->name('notifications');
     
     // Tailor-only (enforced in controller)
     Route::get('incoming', [TailorOrderController::class, 'incoming'])->name('incoming');
@@ -578,30 +595,31 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('all-orders', [TailorOrderController::class, 'allOrders'])->name('all-orders');
     Route::post('all-orders/{order}/status', ...)->name('all-orders.update-status');
     Route::get('all-orders/export', ...)->name('all-orders.export');
-    Route::inertia('kanban', 'KanbanBoard')->name('kanban');
-    Route::inertia('manage-catalog', 'ManageCatalog')->name('manage-catalog');
-    Route::inertia('reports', 'Reports')->name('reports');
+    Route::get('kanban', [TailorOrderController::class, 'kanban'])->name('kanban');
+    Route::get('manage-catalog', [ProductController::class, 'manage'])->name('manage-catalog');
+    Route::get('reports', [ReportController::class, 'index'])->name('reports');
     Route::get('tailor/dashboard', [TailorOrderController::class, 'dashboard'])->name('tailor.dashboard');
     
     // Orders
-    Route::inertia('order-form', 'OrderForm')->name('order-form');
+    Route::get('order-form', [OrderController::class, 'create'])->name('order-form');
     Route::post('orders', [OrderController::class, 'store'])->name('orders.store');
     Route::get('orders/{order}/edit', [OrderController::class, 'edit'])->name('orders.edit');
     Route::put('orders/{order}', [OrderController::class, 'update'])->name('orders.update');
     Route::get('order-tracking/{order}', [OrderController::class, 'show'])->name('order-tracking');
     
     // Payments (mocked)
-    Route::inertia('payment-success', 'PaymentSuccess')->name('payment-success');
-    Route::inertia('payment-failed', 'PaymentFailed')->name('payment-failed');
-    Route::inertia('checkout', 'Checkout')->name('checkout');
+    Route::get('orders/{order}/checkout', [PaymentController::class, 'checkout'])->name('orders.checkout');
+    Route::post('orders/{order}/payments', [PaymentController::class, 'store'])->name('orders.payments.store');
+    Route::get('orders/{order}/payment-success', [PaymentController::class, 'success'])->name('orders.payment-success');
+    Route::get('orders/{order}/payment-failed', [PaymentController::class, 'failed'])->name('orders.payment-failed');
+    Route::post('orders/{order}/messages', [MessageController::class, 'store'])->name('orders.messages.store');
     
     Route::post('/logout', [AuthenticatedSessionController::class, 'destroy'])->name('logout');
 });
 
 // Designer (separate middleware group, no verified required)
-Route::middleware(['auth', 'verified'])->get('/designer', function() {
-    return Inertia::render('DesignerPage');
-})->name('designerPage');
+Route::get('designer', [DesignController::class, 'editor'])->name('designerPage');
+Route::post('designs', [DesignController::class, 'store'])->name('designs.store');
 
 // Settings (from routes/settings.php)
 // Profile, Security, Appearance routes
@@ -616,9 +634,9 @@ Each route exports: `routeName()`, `routeName.url()`, `routeName.get()`, `routeN
 Form variants are enabled: `routeName.form` provides Inertia form helpers.
 
 ### Navigation Pattern
-- **Main app:** Uses `router.visit()` or `router.get()` / `router.post()` / `router.put()` from `@inertiajs/react`
-- **Designer page:** Opens in a new browser tab via `window.open('/designer?id=...&campaign=...')`
-- **CustomerDashboard:** Internal state-based routing (no Inertia visits for sub-views)
+- **Main app:** Each screen is its own URL. The sidebar and page links call `router.visit()`.
+- **Designer page:** Same-tab visit to `/designer?campaign=...&return=...&design=...`. Save redirects back to `return` with the design id.
+- **Checkout:** `/orders/{order}/checkout`, then `/orders/{order}/payment-success` or `/orders/{order}/payment-failed`.
 
 ---
 
@@ -816,11 +834,10 @@ const remaining = Math.max(0, Math.round(subtotal - deposit));
 - Top-level `sizes`, `product_id`, `product_name`, `total_quantity` are set from the FIRST item for backward compatibility
 
 ### Design File Handling
-- Design files are uploaded as regular files (no S3/cloud storage configured)
-- `has_design` boolean flag indicates if a design exists
-- `design_file_path` stores the filename
-- The designer exports to `sessionStorage` — this means designs are temporary and session-scoped
-- **No persistent server-side storage of design files** — only the filename/reference is saved
+- The designer saves a `designs` document and a preview image on the `public` disk.
+- `orders.design_id` points at that document. `design_file_path` is the preview URL.
+- An optional uploaded file on the order form is also stored on the `public` disk under `designs/`.
+- Product images uploaded from Manage Catalog are stored under `products/` on the same disk.
 
 ---
 
@@ -845,8 +862,10 @@ const remaining = Math.max(0, Math.round(subtotal - deposit));
 
 ## 16. BUILD SYSTEM & DEV WORKFLOW
 
-### Local Docker
-Docker Desktop runs the whole app. Herd is not used for this project.
+### Local development
+The whole stack runs in Docker. The files live on the Ubuntu filesystem at `/home/user/tailorease`, which is what makes page loads fast. On Windows, `C:\Users\USER\Herd\tailorease` is a directory symlink to `\\wsl.localhost\Ubuntu\home\user\tailorease`, so Cursor can keep opening that `C:\` path and every save writes the Ubuntu files. Docker Desktop's WSL integration must be on for Ubuntu. A real NTFS copy of the project, bind-mounted into Docker, makes every PHP and Vite file read cross a slow file share (Laravel boot took about 5 seconds per request).
+
+From a Windows terminal in that folder, start the stack with `dev.cmd` (it runs Compose inside Ubuntu). From an Ubuntu terminal, `docker compose up` in `/home/user/tailorease` does the same thing.
 
 ```bash
 docker compose up --build
@@ -855,12 +874,16 @@ docker compose exec app php artisan test
 ```
 
 - App: `http://localhost:8000` (PHP, queue listener, and Vite in one container)
-- Vite: port 5173, HMR host `localhost`, file watching uses polling. `node_modules` is a Docker volume so Vite can rewrite its dependency cache (a Windows bind mount rejects that rename).
+- The `app` container runs as UID/GID 1000 (the WSL user) with `HOME=/tmp`, so `vendor`, `node_modules`, logs, and Wayfinder output stay owned by you, not root.
+- Vite: port 5173, HMR host `localhost`, native file watching. `node_modules` is in the project folder (Linux builds of the native packages).
+- Inertia server rendering is off in this dev setup (`inertia({ ssr: false })` and `INERTIA_SSR_ENABLED` defaults to false).
+- The PHP dev server enables OPcache for CLI with `revalidate_freq=0` (`docker/php/Dockerfile`), so code changes show on the next request.
+- `.env` uses the container URI. Compose sets the same MongoDB settings, so the app always talks to the `mongodb` service.
 - MongoDB 8: `mongodb://localhost:27017` from the host, database `tailorease`
 - The container connection string is `mongodb://mongodb:27017/?replicaSet=rs0` (single-node replica set so Laravel transactions and `RefreshDatabase` work)
 - Seed once after the first boot. `docker compose up` migrates, and it does not seed on every start.
 
-`composer dev` still starts the PHP server, queue listener, and Vite, but those processes are meant to run inside the `app` container, which binds them to `0.0.0.0`.
+`composer dev` is not the dev entry point. The `app` container runs the same three processes (bound to `0.0.0.0`) from its Compose command.
 
 ### Build Pipeline
 1. **Vite** bundles `resources/css/app.css` + `resources/js/app.tsx`
@@ -901,7 +924,7 @@ composer ci:check         # All checks combined
 ### Test Framework
 - **Pest PHP** (v4) with Laravel plugin
 - Test directory: `tests/`
-- PHPUnit config: `phpunit.xml` (MongoDB database `tailorease_testing`, `RefreshDatabase` on feature tests). `tests/bootstrap.php` writes that database name into `$_SERVER` as well as `$_ENV`, because Docker Compose already sets `MONGODB_DATABASE=tailorease` and Laravel reads `$_SERVER` first.
+- PHPUnit config: `phpunit.xml` (MongoDB database `tailorease_testing`, `RefreshDatabase` on feature tests). `tests/bootstrap.php` writes that database name into `$_SERVER` as well as `$_ENV`, because Docker Compose already sets `MONGODB_DATABASE=tailorease` and Laravel reads `$_SERVER` first. `tests/TestCase.php` purges the `mongodb` connection on `DatabaseRefreshed`, because `db:wipe` (run by `migrate:fresh` once the migrations collection exists) disconnects it and the MongoDB connection doesn't reconnect before `RefreshDatabase` starts its transaction.
 - Run tests inside the app container: `docker compose exec app php artisan test`
 
 ### Static Analysis
@@ -920,21 +943,19 @@ GitHub Actions workflow exists in `.github/` (not fully explored, but `composer 
 
 ## 18. KNOWN ISSUES & QUIRKS
 
-1. **Designer uses sessionStorage:** Designs are NOT persisted server-side. If the user closes the tab, the design is lost unless saved elsewhere.
+1. **`resources/mockdata.ts` is still in the repo.** Catalog, orders, reports, notifications, and the designer sticker library no longer read it. A leftover file can still be imported by an old component.
 
-2. **CustomerDashboard is a monolith:** It combines customer and tailor views in one file with a `role` state toggle. The role toggle appears to be for demo purposes (no real role switching UI in the rendered output). This makes the file very large and hard to maintain.
+2. **Duplicate `STATUS_CONFIG`:** Still defined in more than one page. Shared status labels are not a single module yet.
 
-3. **Mock data in production code:** `resources/mockdata.ts` and inline mock data in `CustomerDashboard.tsx` suggest this is still in active development. The `CustomerDashboard` uses `MOCK_ORDERS` hardcoded array while `usePage().props.orders` is also available.
+3. **Duplicate `CalendarPicker`:** Still defined inside `OrderForm.tsx` rather than a shared component.
 
-4. **Duplicate CalendarPicker component:** `CalendarPicker` is defined both in `OrderForm.tsx` and `CustomerDashboard.tsx` (nearly identical copies). Should be extracted to a shared component.
+4. **Payments are records, not a card charge.** Checkout confirms the deposit or balance and writes a `payments` document. There is no Stripe or other gateway.
 
-5. **Duplicate STATUS_CONFIG:** Defined in multiple files (`CustomerDashboard.tsx`, `AllOrders.tsx`, `IncomingOrders.tsx`, `mockdata.ts`). Should be centralized.
+5. **Notifications are not live.** They are written when an order, payment, or message changes, and the next page visit shows them. There is no websocket.
 
-6. **OpenDesignerButton opens new tab:** Uses `window.open()` which may be blocked by popup blockers. Consider inline modal or same-tab navigation.
+6. **Fortify settings routes mixed with custom routes:** `routes/settings.php` is required from `routes/web.php` but uses a different middleware structure.
 
-7. **No real payment integration:** Checkout, PaymentSuccess, PaymentFailed are all mocked UI.
-
-8. **Fortify settings routes mixed with custom routes:** `routes/settings.php` is required from `routes/web.php` but uses a different middleware structure.
+7. **The first Pest test in a process can fail** with `startSession() on null` while MongoDB is opening the client for `RefreshDatabase`. The following tests in that process pass. This was already true of `DashboardTest`.
 
 ---
 
@@ -945,16 +966,11 @@ GitHub Actions workflow exists in `.github/` (not fully explored, but `composer 
    - `CalendarPicker` → `resources/js/components/shared/CalendarPicker.tsx`
    - `STATUS_CONFIG` → `resources/js/constants/orderStatus.ts`
    - `urgencyMeta()` → `resources/js/utils/dateUtils.ts`
-2. **Persist designs server-side:** Upload to `storage/app/designs/` and store path in `design_file_path`
-3. **Implement real payment gateway** (Stripe, PayPal, etc.)
-4. **Add role management UI** (admin panel to assign roles)
-5. **Break down CustomerDashboard** into separate page components per view
-6. **Add product CRUD** (currently `ManageCatalog` is a placeholder)
-7. **Add real-time notifications** (WebSockets/Pusher)
-8. **Add order messaging** (currently local state only, not persisted)
-9. **Implement actual email sending** (order confirmations, status updates)
-10. **Add inventory/stock tracking** for products
-11. **Add reporting backend** (Reports page exists but has no real data source)
+2. **Replace the deposit record with a payment gateway** when a merchant account exists
+3. **Add a role management UI** (roles are still set in the database or seeder)
+4. **Send email** for order confirmations and status changes
+5. **Add inventory counts** for products
+6. **Push notifications live** instead of showing them on the next visit
 
 ---
 
