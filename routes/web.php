@@ -6,6 +6,7 @@ use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\ProductController;
+use App\Http\Controllers\ReportController;
 use App\Http\Controllers\StickerController;
 use App\Http\Controllers\TailorOrderController;
 use Illuminate\Support\Facades\Route;
@@ -53,7 +54,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('stickers', [StickerController::class, 'store'])->name('stickers.store');
         Route::put('stickers/{sticker}', [StickerController::class, 'update'])->name('stickers.update');
         Route::post('stickers/{sticker}/active', [StickerController::class, 'active'])->name('stickers.active');
-        Route::inertia('reports', 'Reports')->name('reports');
+        Route::get('reports', [ReportController::class, 'index'])->name('reports');
         Route::get('tailor/dashboard', [TailorOrderController::class, 'dashboard'])->name('tailor.dashboard');
     });
 });
