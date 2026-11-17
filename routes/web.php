@@ -3,6 +3,7 @@
 use App\Http\Controllers\DesignController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\OrderController;
+use App\Http\Controllers\PaymentController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\StickerController;
 use App\Http\Controllers\TailorOrderController;
@@ -23,9 +24,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('orders/{order}/edit', [OrderController::class, 'edit'])->name('orders.edit');
     Route::put('orders/{order}', [OrderController::class, 'update'])->name('orders.update');
     Route::get('order-tracking/{order}', [OrderController::class, 'show'])->name('order-tracking');
-    Route::inertia('payment-success', 'PaymentSuccess')->name('payment-success');
-    Route::inertia('payment-failed', 'PaymentFailed')->name('payment-failed');
-    Route::inertia('checkout', 'Checkout')->name('checkout');
+    Route::get('orders/{order}/checkout', [PaymentController::class, 'checkout'])->name('orders.checkout');
+    Route::post('orders/{order}/payments', [PaymentController::class, 'store'])->name('orders.payments.store');
+    Route::get('orders/{order}/payment-success', [PaymentController::class, 'success'])->name('orders.payment-success');
+    Route::get('orders/{order}/payment-failed', [PaymentController::class, 'failed'])->name('orders.payment-failed');
     Route::post('orders/{order}/messages', [MessageController::class, 'store'])->name('orders.messages.store');
 
     Route::get('designer', [DesignController::class, 'editor'])->name('designerPage');
