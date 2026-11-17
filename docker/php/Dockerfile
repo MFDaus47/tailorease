@@ -25,6 +25,15 @@ COPY --from=node:22-bookworm-slim /usr/local/lib/node_modules /usr/local/lib/nod
 RUN ln -s /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
     && ln -s /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 
+RUN printf '%s\n' \
+        'opcache.enable=1' \
+        'opcache.enable_cli=1' \
+        'opcache.memory_consumption=128' \
+        'opcache.max_accelerated_files=20000' \
+        'opcache.validate_timestamps=1' \
+        'opcache.revalidate_freq=0' \
+        > /usr/local/etc/php/conf.d/opcache.ini
+
 WORKDIR /var/www/html
 
 EXPOSE 8000 5173

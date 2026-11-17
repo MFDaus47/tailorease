@@ -17,7 +17,7 @@ export default defineConfig({
                 }),
             ],
         }),
-        inertia(),
+        inertia({ ssr: false }),
         react({
             babel: {
                 plugins: ['babel-plugin-react-compiler'],
@@ -38,9 +38,6 @@ export default defineConfig({
         },
         hmr: {
             host: 'localhost',
-        },
-        watch: {
-            usePolling: true,
         },
     },
 });

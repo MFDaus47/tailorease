@@ -3,13 +3,14 @@ services:
     build:
       context: ./docker/php
       dockerfile: Dockerfile
+    user: "${UID:-1000}:${GID:-1000}"
     ports:
       - "8000:8000"
       - "5173:5173"
     volumes:
       - .:/var/www/html
-      - tailorease_node_modules:/var/www/html/node_modules
     environment:
+      HOME: /tmp
       APP_URL: http://localhost:8000
       DB_CONNECTION: mongodb
       MONGODB_URI: mongodb://mongodb:27017/?replicaSet=rs0
@@ -24,7 +25,7 @@ services:
         condition: service_completed_successfully
     command: >
       sh -c "composer install &&
-      npm install &&
+      npm install --no-audit --no-fund &&
       php artisan migrate --force &&
       npx concurrently -c '#93c5fd,#c4b5fd,#fdba74'
       'php artisan serve --host=0.0.0.0 --port=8000'
@@ -55,4 +56,3 @@ services:
 
 volumes:
   tailorease_mongo:
-  tailorease_node_modules:
