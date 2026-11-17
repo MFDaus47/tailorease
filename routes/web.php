@@ -14,16 +14,18 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('my-orders', [OrderController::class, 'myOrders'])->name('my-orders');
     Route::inertia('notifications', 'Notifications')->name('notifications');
 
-    Route::get('incoming', [TailorOrderController::class, 'incoming'])->name('incoming');
-    Route::post('incoming/{order}/accept', [TailorOrderController::class, 'accept'])->name('incoming.accept');
-    Route::post('incoming/{order}/reject', [TailorOrderController::class, 'reject'])->name('incoming.reject');
-    Route::get('all-orders', [TailorOrderController::class, 'allOrders'])->name('all-orders');
-    Route::post('all-orders/{order}/status', [TailorOrderController::class, 'updateStatus'])->name('all-orders.update-status');
-    Route::get('all-orders/export', [TailorOrderController::class, 'export'])->name('all-orders.export');
-    Route::inertia('kanban', 'KanbanBoard')->name('kanban');
-    Route::inertia('manage-catalog', 'ManageCatalog')->name('manage-catalog');
-    Route::inertia('reports', 'Reports')->name('reports');
-    Route::get('tailor/dashboard', [TailorOrderController::class, 'dashboard'])->name('tailor.dashboard');
+    Route::middleware('tailor')->group(function () {
+        Route::get('incoming', [TailorOrderController::class, 'incoming'])->name('incoming');
+        Route::post('incoming/{order}/accept', [TailorOrderController::class, 'accept'])->name('incoming.accept');
+        Route::post('incoming/{order}/reject', [TailorOrderController::class, 'reject'])->name('incoming.reject');
+        Route::get('all-orders', [TailorOrderController::class, 'allOrders'])->name('all-orders');
+        Route::post('all-orders/{order}/status', [TailorOrderController::class, 'updateStatus'])->name('all-orders.update-status');
+        Route::get('all-orders/export', [TailorOrderController::class, 'export'])->name('all-orders.export');
+        Route::inertia('kanban', 'KanbanBoard')->name('kanban');
+        Route::inertia('manage-catalog', 'ManageCatalog')->name('manage-catalog');
+        Route::inertia('reports', 'Reports')->name('reports');
+        Route::get('tailor/dashboard', [TailorOrderController::class, 'dashboard'])->name('tailor.dashboard');
+    });
 
     Route::inertia('order-form', 'OrderForm')->name('order-form');
     Route::post('orders', [OrderController::class, 'store'])->name('orders.store');
