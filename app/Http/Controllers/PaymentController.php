@@ -15,7 +15,7 @@ class PaymentController extends Controller
 {
     public function checkout(Request $request, Order $order): Response
     {
-        $order = $this->visibleOrder($request, $order);
+        $order = $this->customerOrder($request, $order);
 
         return Inertia::render('Checkout', [
             'order' => OrderFormatter::forCustomer($order),
@@ -24,7 +24,7 @@ class PaymentController extends Controller
 
     public function store(Request $request, Order $order): RedirectResponse
     {
-        $order = $this->visibleOrder($request, $order);
+        $order = $this->customerOrder($request, $order);
         $kind = $request->validate([
             'kind' => ['required', 'in:deposit,balance'],
         ])['kind'];
@@ -55,37 +55,50 @@ class PaymentController extends Controller
         }
 
         $label = $kind === 'deposit' ? 'Deposit' : 'Balance';
+        $reference = (string) $order->number;
         Notifier::to(
             (string) $order->customer_id,
             'payment',
             "{$label} recorded",
-            "{$label} of RM".number_format($amount, 2).' was recorded.',
+            "{$label} of RM".number_format($amount, 2)." was recorded for {$reference}.",
             (string) $order->id,
         );
         Notifier::toTailors(
             'payment',
             "{$label} recorded",
-            "{$label} recorded for {$order->product_name}.",
+            "{$label} recorded for {$reference}.",
             (string) $order->id,
         );
 
         return redirect()
             ->route('orders.payment-success', $order)
-            ->with('success', "{$label} recorded.");
+            ->with('payment', [
+                'kind' => $kind,
+                'amount' => $amount,
+            ]);
     }
 
     public function success(Request $request, Order $order): Response
     {
-        $order = $this->visibleOrder($request, $order);
+        $order = $this->customerOrder($request, $order);
+        $record = Payment::query()
+            ->where('order_id', (string) $order->id)
+            ->orderByDesc('created_at')
+            ->first();
+        $flashed = session('payment');
 
         return Inertia::render('PaymentSuccess', [
             'order' => OrderFormatter::forCustomer($order),
+            'payment' => [
+                'kind' => is_array($flashed) ? ($flashed['kind'] ?? $record?->kind) : $record?->kind,
+                'amount' => is_array($flashed) ? ($flashed['amount'] ?? $record?->amount) : $record?->amount,
+            ],
         ]);
     }
 
     public function failed(Request $request, Order $order): Response
     {
-        $order = $this->visibleOrder($request, $order);
+        $order = $this->customerOrder($request, $order);
 
         return Inertia::render('PaymentFailed', [
             'order' => OrderFormatter::forCustomer($order),
@@ -93,12 +106,10 @@ class PaymentController extends Controller
         ]);
     }
 
-    private function visibleOrder(Request $request, Order $order): Order
+    private function customerOrder(Request $request, Order $order): Order
     {
-        $isTailor = $request->user()?->getAttribute('role') === 'tailor';
+        abort_if($request->user()?->getAttribute('role') === 'tailor', 403);
 
-        return $isTailor
-            ? Order::with('customer')->findOrFail($order->id)
-            : $request->user()->orders()->with('customer')->findOrFail($order->id);
+        return $request->user()->orders()->with('customer')->findOrFail($order->id);
     }
 }
