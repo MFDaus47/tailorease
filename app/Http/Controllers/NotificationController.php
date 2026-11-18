@@ -12,8 +12,11 @@ class NotificationController extends Controller
 {
     public function index(Request $request): Response
     {
+        $user = $request->user();
+        abort_unless($user !== null, 401);
+
         $notifications = AppNotification::query()
-            ->where('user_id', (string) $request->user()->id)
+            ->forAudience($user)
             ->orderByDesc('created_at')
             ->get()
             ->map(fn (AppNotification $notification) => self::present($notification))
@@ -26,7 +29,10 @@ class NotificationController extends Controller
 
     public function read(Request $request, AppNotification $notification): RedirectResponse
     {
-        abort_unless((string) $notification->user_id === (string) $request->user()->id, 403);
+        $user = $request->user();
+        abort_unless($user !== null, 401);
+        abort_unless((string) $notification->user_id === (string) $user->getAuthIdentifier(), 403);
+        abort_unless((string) $notification->audience === AppNotification::audienceFor($user), 403);
         $notification->update(['read' => true]);
 
         if ($notification->order_id) {
@@ -38,8 +44,11 @@ class NotificationController extends Controller
 
     public function readAll(Request $request): RedirectResponse
     {
+        $user = $request->user();
+        abort_unless($user !== null, 401);
+
         AppNotification::query()
-            ->where('user_id', (string) $request->user()->id)
+            ->forAudience($user)
             ->where('read', false)
             ->update(['read' => true]);
 

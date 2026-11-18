@@ -42,7 +42,7 @@ class HandleInertiaRequests extends Middleware
 
         if ($user) {
             $notifications = AppNotification::query()
-                ->where('user_id', (string) $user->id)
+                ->forAudience($user)
                 ->orderByDesc('created_at')
                 ->limit(8)
                 ->get()
@@ -59,7 +59,7 @@ class HandleInertiaRequests extends Middleware
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
             'notifications' => $notifications,
             'unreadNotifications' => $user
-                ? AppNotification::query()->where('user_id', (string) $user->id)->where('read', false)->count()
+                ? AppNotification::query()->forAudience($user)->where('read', false)->count()
                 : 0,
         ];
     }

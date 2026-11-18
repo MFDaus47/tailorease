@@ -7,7 +7,7 @@ use App\Models\User;
 
 class Notifier
 {
-    public static function to(string $userId, string $type, string $title, string $body, ?string $orderId = null): void
+    public static function to(string $userId, string $type, string $title, string $body, ?string $orderId = null, string $audience = 'customer'): void
     {
         AppNotification::create([
             'user_id' => $userId,
@@ -15,6 +15,7 @@ class Notifier
             'title' => $title,
             'body' => $body,
             'order_id' => $orderId,
+            'audience' => $audience === 'tailor' ? 'tailor' : 'customer',
             'read' => false,
         ]);
     }
@@ -25,7 +26,7 @@ class Notifier
             ->where('role', 'tailor')
             ->get()
             ->each(function (User $user) use ($type, $title, $body, $orderId): void {
-                self::to((string) $user->id, $type, $title, $body, $orderId);
+                self::to((string) $user->id, $type, $title, $body, $orderId, 'tailor');
             });
     }
 }
