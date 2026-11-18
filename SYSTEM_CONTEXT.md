@@ -4,7 +4,7 @@
 > Every AI agent, developer, or contributor MUST read this file before modifying the system.
 > When changes are made, the agent MUST update the relevant sections of this file.
 >
-> **Last updated:** 2026-11-17
+> **Last updated:** 2026-11-18
 > **System version:** Latest (Laravel 13 + React 19 + Inertia 3)
 
 ---
@@ -84,6 +84,7 @@
 | Lucide React | 0.475 | Icon library |
 | Recharts | 3.8 | Charts (reports) |
 | Sonner | 2.0 | Toast notifications |
+| GSAP + @gsap/react | — | Short page motion on orders, checkout, and the design lightbox |
 | clsx + tailwind-merge + CVA | — | Class name utility |
 | Prettier | 3.4 | Code formatter |
 | ESLint | 9.17 | Linter |
@@ -195,7 +196,9 @@ Connection settings: `DB_CONNECTION=mongodb`, `MONGODB_URI`, `MONGODB_DATABASE`.
 Fields: `name`, `email` (unique), `role` (`customer` or `tailor`, default `customer`, indexed), `email_verified_at`, `password`, `two_factor_secret`, `two_factor_recovery_codes`, `two_factor_confirmed_at`, `remember_token`, timestamps. `role` is fillable. Deleting a user deletes that user's orders.
 
 #### `orders`
-Fields: `customer_id`, `product_id`, `order_name`, `product_name`, `sizes` (native array), `total_quantity`, `total`, `deposit`, `remaining_balance`, `due_date`, `notes`, `has_design` (default false), `design_id`, `design_file_path` (public preview URL), `items` (native array), `status` (default `pending`), timestamps. Indexes: `customer_id`, `product_id`, `status`.
+Fields: `customer_id`, `product_id`, `number` (public reference such as `TE-1001`, unique), `order_name` (optional title), `product_name`, `sizes` (native array), `total_quantity`, `total`, `deposit`, `remaining_balance`, `due_date`, `notes`, `has_design` (default false), `design_id`, `design_file_path` (public preview URL), `items` (native array), `status` (default `pending`), timestamps. Indexes: `customer_id`, `product_id`, `status`, unique `number`.
+
+The MongoDB id stays the route key. `number` is assigned in `OrderNumber` from a `counters` document (`_id: orders`) when the order is created. Screens show `number`, and `order_name` when the customer set one. CSV export uses `number`.
 
 `status` is a string. Allowed values, enforced in `TailorOrderController::updateStatus()`, are `pending`, `accepted`, `deposit_paid`, `in_production`, `quality_check`, `ready`, `completed`, and `rejected`.
 
@@ -224,7 +227,7 @@ Fields: `order_id` (indexed), `amount`, `kind` (`deposit` or `balance`), `record
 Fields: `order_id` (indexed), `user_id`, `body`, `sender_role` (`customer` or `tailor`), timestamps.
 
 #### `notifications`
-Fields: `user_id` (indexed), `type` (`order`, `payment`, or `message`), `title`, `body`, `order_id`, `read` (indexed, default false), timestamps. The model is `App\Models\AppNotification`.
+Fields: `user_id` (indexed), `audience` (`customer` or `tailor`, indexed), `type` (`order`, `payment`, or `message`), `title`, `body`, `order_id`, `read` (indexed, default false), timestamps. The model is `App\Models\AppNotification`. The header and the notifications page load only rows whose `audience` matches the account's current `role`, so one user who is switched between customer and tailor does not see both inboxes at once.
 
 ### Eloquent Relationships
 
@@ -336,6 +339,8 @@ Validates order creation/update:
 | `AppLayout` | `layouts/app-layout.tsx` | Settings layout wrapper (with breadcrumbs) |
 | `SettingsLayout` | `layouts/settings/` | Settings sub-layouts |
 
+The shell is a fixed-height row. The sidebar stays in place. The content column is the only region that scrolls, and it does not widen the page.
+
 ### MainLayout Structure
 ```
 ┌──────────────────────────────────────────────┐
@@ -356,15 +361,15 @@ Validates order creation/update:
 | `CustomerDashboard.tsx` | dashboard | CustomerDashboard | Unified customer/tailor dashboard with internal view routing |
 | `ApparelCatalog.tsx` | catalog | ApparelCatalog | Product catalog |
 | `OrderForm.tsx` | order-form | OrderForm | Bulk order form with multi-product support |
-| `OrderTracking.tsx` | order-tracking | OrderTracking | Single order tracking + chat |
+| `OrderTracking.tsx` | order-tracking | OrderTracking | Order detail, progress, and chat. Tailors can accept or reject a pending order here. Customers can pay or edit when the status allows it. |
 | `MyOrders.tsx` | my-orders | MyOrders | Customer's order list |
-| `Checkout.tsx` | checkout | Checkout | Payment form (mocked) |
+| `Checkout.tsx` | checkout | Checkout | Customer payment mock (card or online banking). Card fields never leave the browser. |
 | `PaymentSuccess.tsx` | payment-success | PaymentSuccess | Payment success page |
 | `PaymentFailed.tsx` | payment-failed | PaymentFailed | Payment failed page |
 | `IncomingOrders.tsx` | incoming | IncomingOrders | Tailor's incoming pending orders |
 | `TailorDashboard.tsx` | tailor.dashboard | TailorDashboard | Tailor dashboard (rendered inside CustomerDashboard) |
 | `AllOrders.tsx` | all-orders | AllOrders | All orders table with status editing |
-| `KanbanBoard.tsx` | kanban | KanbanBoard | Kanban board for production pipeline |
+| `KanbanBoard.tsx` | kanban | KanbanBoard | Production board for `accepted` through `ready`. Columns share the page width. Completing a ready order removes it from the board; the status is still `completed`. |
 | `ManageCatalog.tsx` | manage-catalog | ManageCatalog | Catalog management for tailors |
 | `Reports.tsx` | reports | Reports | Reports/analytics |
 | `Notifications.tsx` | notifications | Notifications | Notification center |
@@ -476,7 +481,7 @@ pending → accepted → deposit_paid → in_production → quality_check → re
 
 ### Business Rules
 1. Only `pending` orders can be accepted or rejected
-2. A tailor can move an order only to the next status: `pending → accepted → deposit_paid → in_production → quality_check → ready → completed`. Reject is allowed only from `pending`. A deposit payment is the customer path from `accepted` to `deposit_paid`. A balance payment is recorded while the order is `ready` and does not change the status.
+2. A tailor can move an order only to the next status: `pending → accepted → deposit_paid → in_production → quality_check → ready → completed`. Reject is allowed only from `pending`. A deposit payment is the customer path from `accepted` to `deposit_paid`. A balance payment is recorded while the order is `ready` and does not change the status. The production board shows `accepted` through `ready` in columns that fit the page. `completed` stays a real status and is listed on All Orders, not on the board.
 3. When an order is edited by a customer, status resets to `pending`
 4. Deposit rate is currently hardcoded per product (50% default), but the system supports per-product rates
 5. `remaining_balance = total - deposit`
@@ -801,6 +806,12 @@ Form variants are enabled: `routeName.form` provides Inertia form helpers.
 
 ## 14. KEY BUSINESS LOGIC
 
+### Who can act on an order
+`OrderController::show` passes a `viewer` object. A tailor looking at a `pending` order gets Accept and Reject on the order page and on Incoming. Pay Deposit and Pay Balance are only for the customer who owns the order, and only at `accepted` and `ready`. Edit and resubmit is only for that customer while the order is `pending` or `rejected`. Checkout and recording a payment return 403 for a tailor. Back from the order page goes to My Orders, Incoming (if the tailor is still reviewing a pending order), or All Orders.
+
+### Messages
+The order page thread aligns each bubble to the person viewing it. While that page is open, `usePoll` reloads the `messages` prop every 4 seconds and throttles that reload when the tab is in the background. The poll stops when the page unmounts. There is no websocket. WhatsApp is not connected.
+
 ### Order Totals Calculation (Frontend, OrderForm.tsx)
 ```ts
 const depositRate = orderItems[0]?.product.depositRate ?? 0.5;
@@ -949,9 +960,9 @@ GitHub Actions workflow exists in `.github/` (not fully explored, but `composer 
 
 3. **Duplicate `CalendarPicker`:** Still defined inside `OrderForm.tsx` rather than a shared component.
 
-4. **Payments are records, not a card charge.** Checkout confirms the deposit or balance and writes a `payments` document. There is no Stripe or other gateway.
+4. **Payments are records, not a card charge.** Checkout shows a card or online-banking form, but the browser posts only `kind` (`deposit` or `balance`) and writes a `payments` document. Card numbers are not sent or stored. There is no Stripe or other gateway. Only the customer who owns the order can open checkout.
 
-5. **Notifications are not live.** They are written when an order, payment, or message changes, and the next page visit shows them. There is no websocket.
+5. **Notifications are not live.** They are written when an order, payment, or message changes, and the next page visit shows the ones for the current role. The order thread polls for new messages. There is no websocket. WhatsApp is not integrated.
 
 6. **Fortify settings routes mixed with custom routes:** `routes/settings.php` is required from `routes/web.php` but uses a different middleware structure.
 
@@ -966,11 +977,12 @@ GitHub Actions workflow exists in `.github/` (not fully explored, but `composer 
    - `CalendarPicker` → `resources/js/components/shared/CalendarPicker.tsx`
    - `STATUS_CONFIG` → `resources/js/constants/orderStatus.ts`
    - `urgencyMeta()` → `resources/js/utils/dateUtils.ts`
-2. **Replace the deposit record with a payment gateway** when a merchant account exists
-3. **Add a role management UI** (roles are still set in the database or seeder)
-4. **Send email** for order confirmations and status changes
-5. **Add inventory counts** for products
-6. **Push notifications live** instead of showing them on the next visit
+2. **Replace the deposit record with a payment gateway** when a merchant account exists. The checkout form is only a mock.
+3. **WhatsApp (or another outside channel) for order messages**, if in-app chat is not enough. The current thread is the working draft.
+4. **Add a role management UI** (roles are still set in the database or seeder)
+5. **Send email** for order confirmations and status changes
+6. **Add inventory counts** for products
+7. **Push notifications live** instead of showing them on the next visit
 
 ---
 
