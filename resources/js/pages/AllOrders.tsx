@@ -2,6 +2,7 @@ import { router, usePage } from '@inertiajs/react';
 import { Calendar, Download, Eye, Image, Search, X } from 'lucide-react';
 import { useMemo, useState, useEffect } from 'react';
 import { Card } from '@/components/ui/card';
+import { matchesOrderQuery, orderNumber } from '@/lib/order-label';
 
 type OrderStatus =
     | 'pending'
@@ -15,6 +16,8 @@ type OrderStatus =
 
 type Order = {
     id: string;
+    number?: string | null;
+    name?: string | null;
     customer: string;
     customerEmail: string;
     avatar: string;
@@ -157,10 +160,7 @@ export default function AllOrders() {
     const filtered = useMemo(() => orders.filter(order => {
         const term = search.trim().toLowerCase();
         const matchesFilter = filter === 'all' || order.status === filter;
-        const matchesSearch = !term ||
-            order.id.toLowerCase().includes(term) ||
-            order.customer.toLowerCase().includes(term) ||
-            order.product.toLowerCase().includes(term);
+        const matchesSearch = matchesOrderQuery(order, term);
 
         return matchesFilter && matchesSearch;
     }), [orders, filter, search]);
@@ -245,7 +245,10 @@ export default function AllOrders() {
                                             onClick={() => setSelected(order)}
                                             className={`cursor-pointer transition-colors ${selected?.id === order.id ? 'bg-indigo-50/60' : 'hover:bg-muted/30'}`}
                                         >
-                                            <td className="px-5 py-3.5 font-semibold text-indigo-600 whitespace-nowrap">{order.id}</td>
+                                            <td className="px-5 py-3.5 whitespace-nowrap">
+                                                <p className="font-semibold text-indigo-600">{orderNumber(order)}</p>
+                                                {order.name && <p className="text-xs text-muted-foreground">{order.name}</p>}
+                                            </td>
                                             <td className="px-5 py-3.5">
                                                 <div className="flex items-center gap-2">
                                                     <AvatarBadge initials={order.avatar} />
@@ -334,7 +337,8 @@ export default function AllOrders() {
 
                         <div className="space-y-2 text-sm">
                             {[
-                                ['Order ID', selected.id],
+                                ['Order', orderNumber(selected)],
+                                ...(selected.name ? [['Name', selected.name] as [string, string]] : []),
                                 ['Product', selected.product],
                                 ['Size', selected.size],
                                 ['Quantity', `×${selected.quantity}`],

@@ -2,6 +2,7 @@ import { router, usePage } from '@inertiajs/react';
 import { Search, Plus, Eye, Package, Calendar, Clock } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Card } from '@/components/ui/card';
+import { matchesOrderQuery, orderNumber } from '@/lib/order-label';
 import type { View } from '@/types';
 
 type OrderStatus =
@@ -16,6 +17,8 @@ type OrderStatus =
 
 type Order = {
     id: string;
+    number?: string | null;
+    name?: string | null;
     product: string;
     quantity: number;
     size: string;
@@ -111,7 +114,7 @@ export default function MyOrders({ onNavigate, onSelectOrder }: {
 
     const filtered = useMemo(() => orders.filter(order =>
         (filter === 'all' || order.status === filter) &&
-        (search === '' || order.id.includes(search) || order.product.toLowerCase().includes(search.toLowerCase()))
+        matchesOrderQuery(order, search)
     ), [orders, filter, search]);
 
     return (
@@ -170,7 +173,8 @@ export default function MyOrders({ onNavigate, onSelectOrder }: {
                             >
                                 {/* Order ID */}
                                 <td className="px-5 py-4">
-                                    <span className="font-semibold text-indigo-600 group-hover:text-indigo-700">{order.id}</span>
+                                    <span className="font-semibold text-indigo-600 group-hover:text-indigo-700">{orderNumber(order)}</span>
+                                    {order.name && <p className="mt-0.5 text-xs font-normal text-muted-foreground">{order.name}</p>}
                                 </td>
 
                                 {/* Product */}

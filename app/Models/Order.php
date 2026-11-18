@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Support\OrderNumber;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use MongoDB\Laravel\Eloquent\Model;
 
@@ -12,6 +13,7 @@ class Order extends Model
         'product_id',
         'product_name',
         'order_name',
+        'number',
         'sizes',
         'total_quantity',
         'total',
@@ -35,6 +37,15 @@ class Order extends Model
         'due_date' => 'date',
         'has_design' => 'boolean',
     ];
+
+    protected static function booted(): void
+    {
+        static::creating(function (Order $order): void {
+            if (! filled($order->number)) {
+                $order->number = OrderNumber::next();
+            }
+        });
+    }
 
     public function customer(): BelongsTo
     {

@@ -17,6 +17,7 @@ class StoreOrderRequest extends FormRequest
             // Top-level summary fields (derived from items for backward compat)
             'product_id' => 'nullable|string',
             'product_name' => 'required|string|max:255',
+            'order_name' => 'nullable|string|max:80',
             'sizes' => 'required|array|min:1',
             'total_quantity' => 'required|integer|min:1',
             'total' => 'required|numeric|min:0',

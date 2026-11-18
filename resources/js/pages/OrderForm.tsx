@@ -16,6 +16,7 @@ type Product = {
     basePrice: number;
     depositRate: number;
     image: string;
+    modelPath?: string | null;
     description: string;
     available: boolean;
     rating: number;
@@ -452,6 +453,7 @@ export default function OrderForm({ product, orderToEdit, products = [], design 
     const [designFile, setDesignFile] = useState<File | null>(null);
     const [designUrl, setDesignUrl] = useState<string | null>(design?.preview ?? orderToEdit?.design_file_path ?? null);
     const [fileName, setFileName] = useState<string | null>(orderToEdit?.design_file_path || null);
+    const [orderName, setOrderName] = useState(orderToEdit?.order_name || '');
     const [notes, setNotes] = useState(orderToEdit?.notes || '');
     const [dueDate, setDueDate] = useState<string | null>(
         orderToEdit?.due_date ? new Date(orderToEdit.due_date).toISOString().slice(0, 10) : null
@@ -544,6 +546,7 @@ return;
         const payload = {
             product_id:        firstItem.product_id,
             product_name:      items.length === 1 ? firstItem.product_name : `${items.length} Products`,
+            order_name:        orderName.trim() || null,
             sizes:             firstItem.sizes,
             total_quantity:    totalQty,
             total:             subtotal,
@@ -607,6 +610,16 @@ return;
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
                 {/* ── Left: Form ── */}
                 <div className="lg:col-span-2 space-y-4">
+                    <Card className="p-4">
+                        <h3 className="text-sm font-semibold text-foreground mb-1">Order name <span className="text-muted-foreground font-normal">(Optional)</span></h3>
+                        <p className="text-xs text-muted-foreground mb-3">A short title you and the tailor can recognize. The order number is assigned automatically.</p>
+                        <input
+                            value={orderName}
+                            onChange={e => setOrderName(e.target.value.slice(0, 80))}
+                            placeholder="Friday team jerseys"
+                            className="w-full px-3 py-2.5 text-sm bg-muted rounded-lg border border-border focus:border-indigo-300 focus:outline-none"
+                        />
+                    </Card>
 
                     {/* Per-product size cards */}
                     {orderItems.map((item, index) => (
@@ -704,9 +717,10 @@ return;
                             orderId={orderToEdit?.id}
                             designId={design?.id ?? orderToEdit?.design_id}
                             campaignName={orderItems[0]?.product?.name ?? "Order Design"}
+                            modelPath={orderItems[0]?.product?.modelPath}
                         />
                         <div className="mt-3">
-                            <ShirtViewer color={color} designUrl={designUrl} />
+                            <ShirtViewer color={color} designUrl={designUrl} modelPath={orderItems[0]?.product?.modelPath} />
                         </div>
                     </Card>
 

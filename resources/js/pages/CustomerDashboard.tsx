@@ -1,5 +1,6 @@
 import { router, usePage } from '@inertiajs/react';
 import { Plus, Scissors, ShoppingBag, Package, Bell, ChevronRight, ArrowRight, ShoppingCart, Activity, DollarSign } from 'lucide-react';
+import { orderNumber, orderTitle } from '@/lib/order-label';
 
 type OrderStatus =
     | 'pending' | 'accepted' | 'deposit_paid' | 'in_production'
@@ -7,6 +8,8 @@ type OrderStatus =
 
 type Order = {
     id: string;
+    number?: string | null;
+    name?: string | null;
     product: string;
     quantity: number;
     total: number;
@@ -85,8 +88,8 @@ export default function CustomerDashboard({ orders = [] }: { orders?: Order[] })
                                     <Scissors size={15} className="text-indigo-500" />
                                 </div>
                                 <div>
-                                    <p className="text-sm font-medium text-foreground">{order.product}</p>
-                                    <p className="text-xs text-muted-foreground">{order.quantity} pcs · {order.date}</p>
+                                    <p className="text-sm font-medium text-foreground">{orderTitle(order)}</p>
+                                    <p className="text-xs text-muted-foreground">{orderNumber(order)} · {order.quantity} pcs · {order.date}</p>
                                 </div>
                             </div>
                             <div className="flex items-center gap-4">

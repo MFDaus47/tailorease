@@ -32,6 +32,10 @@ class OrderFormatter
     {
         $items = $order->items;
 
+        if ($items instanceof \Traversable) {
+            $items = iterator_to_array($items);
+        }
+
         if (is_array($items) && count($items) > 1) {
             return implode(', ', array_map(
                 fn ($item) => "{$item['product_name']} ({$item['total_quantity']} pcs)",
@@ -47,25 +51,12 @@ class OrderFormatter
         $customer = $order->customer;
 
         return [
-            'id' => (string) $order->id,
-            'product' => self::productSummary($order),
+            ...self::shared($order),
             'customer_name' => $customer?->name ?? 'Unknown Customer',
             'customer_email' => $customer?->email ?? 'N/A',
-            'quantity' => (int) $order->total_quantity,
-            'size' => self::sizeLabel($order->sizes),
-            'total' => (float) $order->total,
-            'deposit' => (float) $order->deposit,
-            'remaining' => (float) $order->remaining_balance,
-            'due_date' => $order->due_date?->format('Y-m-d'),
+            'customer' => $customer?->name ?? 'Unknown Customer',
+            'customerEmail' => $customer?->email ?? '',
             'deliveryDate' => $order->due_date?->format('M d, Y'),
-            'date' => $order->created_at?->format('M d, Y') ?? '',
-            'createdAt' => $order->created_at?->format('Y-m-d') ?? '',
-            'status' => (string) $order->status,
-            'notes' => $order->notes ?: null,
-            'hasDesign' => (bool) $order->has_design,
-            'designId' => $order->design_id ? (string) $order->design_id : null,
-            'designPreview' => $order->design_file_path ?: null,
-            'items' => $order->items ?? null,
         ];
     }
 
@@ -82,18 +73,31 @@ class OrderFormatter
         }
 
         return [
-            'id' => (string) $order->id,
+            ...self::shared($order),
             'customer' => $customer?->name ?? 'Unknown Customer',
             'customerEmail' => $customer?->email ?? '',
             'avatar' => $avatar,
-            'product' => self::productSummary($order),
             'productId' => (string) $order->product_id,
-            'size' => self::sizeLabel($order->sizes),
+            'deliveryDate' => $order->due_date?->format('Y-m-d'),
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private static function shared(Order $order): array
+    {
+        return [
+            'id' => (string) $order->id,
+            'number' => (string) ($order->number ?: ''),
+            'name' => filled($order->order_name) ? (string) $order->order_name : null,
+            'product' => self::productSummary($order),
             'quantity' => (int) $order->total_quantity,
+            'size' => self::sizeLabel($order->sizes),
             'total' => (float) $order->total,
             'deposit' => (float) $order->deposit,
             'remaining' => (float) $order->remaining_balance,
-            'deliveryDate' => $order->due_date?->format('Y-m-d'),
+            'due_date' => $order->due_date?->format('Y-m-d'),
             'date' => $order->created_at?->format('M d, Y') ?? '',
             'createdAt' => $order->created_at?->format('Y-m-d') ?? '',
             'status' => (string) $order->status,
@@ -101,6 +105,21 @@ class OrderFormatter
             'hasDesign' => (bool) $order->has_design,
             'designId' => $order->design_id ? (string) $order->design_id : null,
             'designPreview' => $order->design_file_path ?: null,
+            'items' => self::items($order),
         ];
+    }
+
+    /**
+     * @return array<int, mixed>
+     */
+    private static function items(Order $order): array
+    {
+        $items = $order->items;
+
+        if ($items instanceof \Traversable) {
+            $items = iterator_to_array($items);
+        }
+
+        return is_array($items) ? array_values($items) : [];
     }
 }

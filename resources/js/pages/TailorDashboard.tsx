@@ -1,4 +1,6 @@
 import { router } from "@inertiajs/react";
+import { useMemo, useState } from "react";
+import { matchesOrderQuery, orderNumber } from "@/lib/order-label";
 import {
     Calendar, ChevronRight, Eye, ShoppingCart, DollarSign,
     Activity, Clock, TrendingUp
@@ -14,6 +16,8 @@ type OrderStatus =
 
 interface Order {
     id: string;
+    number?: string | null;
+    name?: string | null;
     customer: string;
     customerEmail: string;
     avatar: string;
@@ -110,7 +114,12 @@ function AvatarBadge({ initials, color = "indigo" }: { initials: string; color?:
 }
 
 export default function TailorDashboard({ orders = [] }: TailorDashboardProps) {
-    const displayOrders = orders.slice(0, 5);
+    const [search, setSearch] = useState('');
+    const displayOrders = useMemo(() => {
+        const matched = orders.filter((order) => matchesOrderQuery(order, search));
+
+        return search.trim() ? matched : matched.slice(0, 5);
+    }, [orders, search]);
     const revenueData = Object.values(orders.reduce<Record<string, { month: string; revenue: number }>>((months, order) => {
         const key = (order.createdAt || '').slice(0, 7) || 'unknown';
         const label = order.createdAt ? new Date(order.createdAt).toLocaleString('en', { month: 'short' }) : '—';
@@ -197,8 +206,14 @@ export default function TailorDashboard({ orders = [] }: TailorDashboardProps) {
 
             {/* Recent Orders */}
             <Card>
-                <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+                <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-border">
                     <h2 className="text-sm font-semibold text-foreground">Recent Orders</h2>
+                    <input
+                        value={search}
+                        onChange={(event) => setSearch(event.target.value)}
+                        placeholder="Search number or name"
+                        className="w-48 rounded-lg border border-border bg-background px-3 py-1.5 text-xs focus:outline-none"
+                    />
                     <button onClick={() => router.visit('/all-orders')} className="text-xs text-indigo-600 font-medium hover:underline flex items-center gap-1">View all <ChevronRight size={12} /></button>
                 </div>
                 <div className="overflow-x-auto">
@@ -213,7 +228,10 @@ export default function TailorDashboard({ orders = [] }: TailorDashboardProps) {
                         <tbody className="divide-y divide-border">
                             {displayOrders.map(order => (
                                 <tr key={order.id} className="hover:bg-muted/30 transition-colors">
-                                    <td className="px-5 py-3.5 font-semibold text-indigo-600">{order.id}</td>
+                                    <td className="px-5 py-3.5">
+                                        <p className="font-semibold text-indigo-600">{orderNumber(order)}</p>
+                                        {order.name && <p className="text-xs text-muted-foreground">{order.name}</p>}
+                                    </td>
                                     <td className="px-5 py-3.5">
                                         <div className="flex items-center gap-2">
                                             <AvatarBadge initials={order.avatar} />
