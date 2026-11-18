@@ -64,6 +64,7 @@ class OrderController extends Controller
         return Inertia::render('OrderTracking', [
             'order' => OrderFormatter::forCustomer($order),
             'messages' => $messages,
+            'viewer' => $this->viewer($request, $order),
         ]);
     }
 
@@ -90,17 +91,19 @@ class OrderController extends Controller
         $order = Order::create($validated);
         $this->attachDesign($request, $order);
 
+        $reference = (string) $order->number;
+
         Notifier::to(
             (string) $order->customer_id,
             'order',
             'Order submitted',
-            "{$order->product_name} is waiting for the tailor to review it.",
+            "{$reference} is waiting for the tailor to review it.",
             (string) $order->id,
         );
         Notifier::toTailors(
             'order',
             'New order',
-            "{$request->user()->name} submitted {$order->product_name}.",
+            "{$request->user()->name} submitted {$reference}.",
             (string) $order->id,
         );
 
@@ -138,7 +141,7 @@ class OrderController extends Controller
         Notifier::toTailors(
             'order',
             'Order updated',
-            "{$request->user()->name} resubmitted {$order->product_name}.",
+            "{$request->user()->name} resubmitted {$order->number}.",
             (string) $order->id,
         );
 
@@ -189,6 +192,9 @@ class OrderController extends Controller
     {
         $validated = $request->safe()->except(['design_file']);
         $validated['has_design'] = (bool) ($validated['has_design'] ?? false);
+        $validated['order_name'] = filled($validated['order_name'] ?? null)
+            ? trim((string) $validated['order_name'])
+            : null;
 
         if ($request->hasFile('design_file')) {
             $stored = $request->file('design_file')->store('designs', 'public');
@@ -218,6 +224,24 @@ class OrderController extends Controller
             ->where('user_id', (string) $request->user()->id)
             ->whereKey($order->design_id)
             ->update(['order_id' => (string) $order->id]);
+    }
+
+    /**
+     * @return array{role: string, canDecide: bool, canPayDeposit: bool, canPayBalance: bool, canEdit: bool}
+     */
+    private function viewer(Request $request, Order $order): array
+    {
+        $isTailor = $request->user()?->getAttribute('role') === 'tailor';
+        $owns = (string) $order->customer_id === (string) $request->user()?->id;
+        $status = (string) $order->status;
+
+        return [
+            'role' => $isTailor ? 'tailor' : 'customer',
+            'canDecide' => $isTailor && $status === 'pending',
+            'canPayDeposit' => $owns && ! $isTailor && $status === 'accepted',
+            'canPayBalance' => $owns && ! $isTailor && $status === 'ready',
+            'canEdit' => $owns && ! $isTailor && in_array($status, ['pending', 'rejected'], true),
+        ];
     }
 
     private function visibleOrder(Request $request, Order $order): Order

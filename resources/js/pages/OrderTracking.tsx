@@ -1,13 +1,14 @@
-import { router, usePage } from '@inertiajs/react';
+import { router, usePage, usePoll } from '@inertiajs/react';
 import {
-    ArrowLeft, Calendar, CreditCard, Package, Scissors,
-    Check, Clock, CheckCircle, Star, MessageSquare,
-    Send, Download, XCircle, ChevronLeft, Image as ImageIcon,
-    Plus, ChevronRight, AlertTriangle
+    Check, CheckCircle, ChevronLeft, Clock, CreditCard, MessageSquare,
+    Package, Scissors, Send, Star, XCircle,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import DesignPreview from '@/components/orders/DesignPreview';
+import RejectOrderDialog from '@/components/orders/RejectOrderDialog';
 import { Card } from '@/components/ui/card';
-import type { View } from '@/types';
+import { gsap, motionReduced, useGSAP } from '@/lib/gsap';
+import { activeSizes, orderNumber, orderTitle } from '@/lib/order-label';
 
 type OrderStatus =
     | 'pending'
@@ -37,7 +38,10 @@ type OrderItem = {
 
 type Order = {
     id: string;
+    number?: string | null;
+    name?: string | null;
     product: string;
+    customer?: string;
     quantity: number;
     size: string;
     total: number;
@@ -48,9 +52,18 @@ type Order = {
     notes: string | null;
     hasDesign: boolean;
     items?: OrderItem[] | null;
+    remaining?: number | null;
     remaining_balance?: number | null;
     due_date?: string | null;
-    design_file_path?: string | null;
+    designPreview?: string | null;
+};
+
+type Viewer = {
+    role: 'customer' | 'tailor';
+    canDecide: boolean;
+    canPayDeposit: boolean;
+    canPayBalance: boolean;
+    canEdit: boolean;
 };
 
 const STATUS_CONFIG: Record<OrderStatus, { label: string; color: string; bg: string; dot: string }> = {
@@ -63,6 +76,8 @@ const STATUS_CONFIG: Record<OrderStatus, { label: string; color: string; bg: str
     completed: { label: 'Completed', color: 'text-slate-700', bg: 'bg-slate-100 border border-slate-200', dot: 'bg-slate-500' },
     rejected: { label: 'Rejected', color: 'text-red-700', bg: 'bg-red-50 border border-red-200', dot: 'bg-red-500' },
 };
+
+const DEPOSIT_RECORDED: OrderStatus[] = ['deposit_paid', 'in_production', 'quality_check', 'ready', 'completed'];
 
 const TIMELINE_STEPS: { key: OrderStatus; label: string; icon: React.ReactNode }[] = [
     { key: 'pending', label: 'Pending Review', icon: <Clock size={14} /> },
@@ -80,15 +95,9 @@ function formatCurrency(value: number) {
     return `RM${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function getActiveSizes(sizes: Record<string, number>) {
-    return Object.entries(sizes)
-        .filter(([, qty]) => (qty || 0) > 0)
-        .map(([size, qty]) => ({ size, qty: qty || 0 }));
-}
-
 function getOrderItems(order: Order): OrderItem[] {
     if (order.items && order.items.length > 0) {
-        return order.items.map(item => ({
+        return order.items.map((item) => ({
             product_id: item.product_id,
             product_name: item.product_name,
             sizes: typeof item.sizes === 'object' ? item.sizes : {},
@@ -98,180 +107,76 @@ function getOrderItems(order: Order): OrderItem[] {
         }));
     }
 
-    const sizes = (typeof order.size === 'string' && order.size !== 'N/A')
-        ? Object.fromEntries(order.size.split(', ').map(s => {
-            const match = s.match(/^(.+?)(?: ×(\d+))?$/);
-            if (!match) return [s, 1];
-            return [match[1], match[2] ? parseInt(match[2]) : 1];
-        }))
-        : {};
-
-    const qty = order.quantity || Object.values(sizes).reduce((a, b) => a + b, 0);
-    const basePrice = qty > 0 ? order.total / qty : 0;
-
     return [{
-        product_id: undefined,
         product_name: order.product,
-        sizes,
-        total_quantity: qty,
-        base_price: basePrice,
+        sizes: {},
+        total_quantity: order.quantity,
+        base_price: order.quantity > 0 ? order.total / order.quantity : 0,
         subtotal: order.total,
     }];
 }
 
-function getRemainingBalance(order: Order & { remaining?: number | null; remaining_balance?: number | null }) {
-    if (typeof order.remaining === 'number') return order.remaining;
-    if (typeof order.remaining_balance === 'number') return order.remaining_balance;
-    return order.total - order.deposit;
-}
+function getRemainingBalance(order: Order) {
+    if (typeof order.remaining === 'number') {
+        return order.remaining;
+    }
 
-function getDesignFileName(path: string | null | undefined) {
-    if (path) return path.split(/[\\/]/).pop() || path;
-    return 'design_reference.png';
+    if (typeof order.remaining_balance === 'number') {
+        return order.remaining_balance;
+    }
+
+    return order.total - order.deposit;
 }
 
 function StatusBadge({ status }: { status: OrderStatus }) {
     const cfg = STATUS_CONFIG[status];
 
     return (
-        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium ${cfg.color} ${cfg.bg}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
+        <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${cfg.color} ${cfg.bg}`}>
+            <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
             {cfg.label}
         </span>
     );
 }
 
-function getDummyMessages(): Message[] {
-    return [
-        { id: 'm1', sender: 'tailor', text: 'Your order has been accepted! We\'ll begin production shortly.', time: 'May 29, 09:15' },
-        { id: 'm2', sender: 'customer', text: 'Thank you! Can I confirm the fabric choice?', time: 'May 29, 14:30' },
-        { id: 'm3', sender: 'tailor', text: 'Blue Egyptian cotton confirmed. Production starts Monday.', time: 'May 30, 10:00' },
-    ];
-}
-
-function CheckoutPage({ onNavigate }: { onNavigate?: (v: View) => void }) {
-    return (
-        <div className="max-w-lg mx-auto space-y-5">
-            <div className="flex items-center gap-3">
-                <button onClick={() => onNavigate?.('order-tracking')} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground transition-colors"><ChevronLeft size={18} /></button>
-                <h1 className="text-xl font-bold text-foreground">Checkout</h1>
-            </div>
-            <Card className="p-5">
-                <h3 className="text-sm font-semibold text-foreground mb-4">Order Summary</h3>
-                <div className="flex gap-4 pb-4 border-b border-border">
-                    <img src="https://images.unsplash.com/photo-1596755094514-f87e34085b2c?w=400&h=280&fit=crop&auto=format" alt="Product" className="w-16 h-16 rounded-lg object-cover bg-slate-100" />
-                    <div>
-                        <p className="text-sm font-semibold text-foreground">Bespoke Dress Shirt</p>
-                        <p className="text-xs text-muted-foreground">Size M · ×1 · Order ORD-2420</p>
-                    </div>
-                </div>
-                <div className="space-y-2 mt-4 text-sm">
-                    <div className="flex justify-between text-muted-foreground"><span>Subtotal</span><span>RM85.00</span></div>
-                    <div className="flex justify-between font-semibold text-foreground border-t border-border pt-2"><span>Deposit Due Now</span><span className="text-indigo-600">RM42.50</span></div>
-                </div>
-            </Card>
-            <Card className="p-5">
-                <h3 className="text-sm font-semibold text-foreground mb-4">Payment Method</h3>
-                <div className="space-y-3">
-                    {["Credit / Debit Card", "GCash", "PayMaya"].map((m, i) => (
-                        <label key={m} className={`flex items-center gap-3 p-3.5 rounded-lg border cursor-pointer transition-all ${i === 0 ? "border-primary bg-accent" : "border-border hover:border-indigo-200"}`}>
-                            <input type="radio" name="method" defaultChecked={i === 0} className="accent-indigo-600" />
-                            <span className="text-sm font-medium text-foreground">{m}</span>
-                        </label>
-                    ))}
-                </div>
-                <div className="mt-4 space-y-3">
-                    <input type="text" placeholder="Card number" className="w-full px-3.5 py-2.5 text-sm bg-muted rounded-lg border border-border focus:border-indigo-300 focus:outline-none transition-all placeholder:text-muted-foreground" />
-                    <div className="grid grid-cols-2 gap-3">
-                        <input type="text" placeholder="MM / YY" className="w-full px-3.5 py-2.5 text-sm bg-muted rounded-lg border border-border focus:border-indigo-300 focus:outline-none transition-all placeholder:text-muted-foreground" />
-                        <input type="text" placeholder="CVV" className="w-full px-3.5 py-2.5 text-sm bg-muted rounded-lg border border-border focus:border-indigo-300 focus:outline-none transition-all placeholder:text-muted-foreground" />
-                    </div>
-                </div>
-            </Card>
-            <div className="flex gap-3">
-                <button onClick={() => onNavigate?.('order-tracking')} className="flex-1 py-2.5 border border-border text-sm font-medium text-muted-foreground rounded-lg hover:bg-muted transition-colors">Cancel</button>
-                <button onClick={() => onNavigate?.('payment-success')} className="flex-1 py-2.5 bg-primary text-primary-foreground text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors shadow-sm flex items-center justify-center gap-2">
-                    <CreditCard size={15} /> Pay RM42.50
-                </button>
-            </div>
-        </div>
-    );
-}
-
-function PaymentSuccessPage({ onNavigate }: { onNavigate?: (v: View) => void }) {
-    return (
-        <div className="max-w-md mx-auto text-center py-12">
-            <div className="w-20 h-20 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-5">
-                <CheckCircle size={40} className="text-emerald-500" />
-            </div>
-            <h1 className="text-2xl font-bold text-foreground mb-2">Payment Successful!</h1>
-            <p className="text-sm text-muted-foreground mb-6 leading-relaxed">Your deposit of <strong>RM42.50</strong> has been received. Your order <strong>ORD-2420</strong> is now confirmed and the tailor will review it shortly.</p>
-            <div className="bg-card rounded-xl border border-border p-5 text-left space-y-2 mb-6">
-                {[["Order ID", "ORD-2420"], ["Product", "Bespoke Dress Shirt"], ["Amount Paid", "RM42.50"], ["Date", new Date().toLocaleDateString()]].map(([k, v]) => (
-                    <div key={k} className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">{k}</span>
-                        <span className="font-medium text-foreground">{v}</span>
-                    </div>
-                ))}
-            </div>
-            <div className="flex gap-3 justify-center">
-                <button onClick={() => onNavigate?.('order-tracking')} className="px-5 py-2.5 bg-primary text-primary-foreground text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors">
-                    Track Order
-                </button>
-                <button onClick={() => onNavigate?.('dashboard')} className="px-5 py-2.5 border border-border text-sm font-medium text-foreground rounded-lg hover:bg-muted transition-colors">
-                    Go to Dashboard
-                </button>
-            </div>
-        </div>
-    );
-}
-
-function PaymentFailedPage({ onNavigate }: { onNavigate?: (v: View) => void }) {
-    return (
-        <div className="max-w-md mx-auto text-center py-12">
-            <div className="w-20 h-20 rounded-full bg-red-100 flex items-center justify-center mx-auto mb-5">
-                <XCircle size={40} className="text-red-500" />
-            </div>
-            <h1 className="text-2xl font-bold text-foreground mb-2">Payment Failed</h1>
-            <p className="text-sm text-muted-foreground mb-6 leading-relaxed">We couldn't process your payment. Please check your card details and try again. Your order has not been placed.</p>
-            <div className="bg-red-50 border border-red-100 rounded-xl p-4 mb-6 text-left">
-                <div className="flex items-start gap-3">
-                    <AlertTriangle size={16} className="text-red-500 mt-0.5" />
-                    <div>
-                        <p className="text-sm font-semibold text-red-700">Possible reasons:</p>
-                        <ul className="text-xs text-red-500 mt-1 space-y-0.5 list-disc list-inside">
-                            <li>Insufficient funds</li>
-                            <li>Card details entered incorrectly</li>
-                            <li>Card not authorized for online payments</li>
-                        </ul>
-                    </div>
-                </div>
-            </div>
-            <div className="flex gap-3 justify-center">
-                <button onClick={() => onNavigate?.('checkout')} className="px-5 py-2.5 bg-primary text-primary-foreground text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors">
-                    Try Again
-                </button>
-                <button onClick={() => onNavigate?.('order-tracking')} className="px-5 py-2.5 border border-border text-sm font-medium text-foreground rounded-lg hover:bg-muted transition-colors">
-                    Back to Order
-                </button>
-            </div>
-        </div>
-    );
-}
-
-export default function OrderTracking({ onNavigate }: { currentView?: View; onNavigate?: (view: View) => void }) {
-    const { order, messages = [] } = usePage<{ order?: Order; messages?: Message[] }>().props;
+export default function OrderTracking() {
+    const { order, messages = [], viewer } = usePage<{ order?: Order; messages?: Message[]; viewer?: Viewer }>().props;
     const [newMsg, setNewMsg] = useState('');
+    const [sending, setSending] = useState(false);
+    const [sendError, setSendError] = useState('');
+    const [rejectOpen, setRejectOpen] = useState(false);
+    const [deciding, setDeciding] = useState(false);
+    const pageRef = useRef<HTMLDivElement>(null);
+    const threadRef = useRef<HTMLDivElement>(null);
 
-    const goBack = () => {
-        router.visit('/my-orders');
-    };
+    useGSAP(() => {
+        if (motionReduced()) {
+            return;
+        }
 
-    if (!order) {
+        gsap.from('[data-step]', {
+            x: -8,
+            opacity: 0,
+            duration: 0.3,
+            stagger: 0.04,
+            ease: 'power2.out',
+            clearProps: 'transform,opacity',
+        });
+    }, { scope: pageRef });
+
+    usePoll(4000, { only: ['messages'] }, { keepAlive: false });
+
+    useEffect(() => {
+        if (threadRef.current) {
+            threadRef.current.scrollTop = threadRef.current.scrollHeight;
+        }
+    }, [messages.length]);
+
+    if (!order || !viewer) {
         return (
             <div className="space-y-5">
-                <button onClick={goBack} className="flex items-center gap-2 text-sm font-medium text-indigo-600 hover:text-indigo-700">
-                    <ArrowLeft size={16} /> Back to orders
+                <button onClick={() => router.visit('/my-orders')} className="flex items-center gap-2 text-sm font-medium text-indigo-600">
+                    <ChevronLeft size={16} /> Back to orders
                 </button>
                 <div className="rounded-lg border border-border bg-card p-8 text-center text-sm text-muted-foreground">
                     No order data was provided.
@@ -281,81 +186,128 @@ export default function OrderTracking({ onNavigate }: { currentView?: View; onNa
     }
 
     const currentStepIdx = STEP_ORDER.indexOf(order.status);
+    const depositRecorded = DEPOSIT_RECORDED.includes(order.status);
+    const reference = orderNumber(order);
+    const title = orderTitle(order);
+
+    const goBack = () => {
+        if (viewer.role === 'tailor') {
+            router.visit(order.status === 'pending' ? '/incoming' : '/all-orders');
+
+            return;
+        }
+
+        router.visit('/my-orders');
+    };
 
     const sendMsg = () => {
-        if (!newMsg.trim()) return;
+        if (!newMsg.trim() || sending) {
+            return;
+        }
+
+        setSending(true);
+        setSendError('');
         router.post(`/orders/${order.id}/messages`, { body: newMsg }, {
             preserveScroll: true,
             onSuccess: () => setNewMsg(''),
+            onError: () => setSendError('The message could not be sent.'),
+            onFinish: () => setSending(false),
         });
     };
 
+    const accept = () => {
+        setDeciding(true);
+        router.post(`/incoming/${encodeURIComponent(order.id)}/accept`, {}, {
+            preserveScroll: true,
+            onFinish: () => setDeciding(false),
+        });
+    };
+
+    const reject = (reason: string, notes: string) => {
+        setDeciding(true);
+        router.post(`/incoming/${encodeURIComponent(order.id)}/reject`, { reason, notes }, {
+            preserveScroll: true,
+            onSuccess: () => setRejectOpen(false),
+            onFinish: () => setDeciding(false),
+        });
+    };
+
+    const items = getOrderItems(order);
+
     return (
-        <div className="space-y-5">
-            <div className="flex items-center gap-3">
-                <button onClick={goBack} className="p-1.5 rounded-lg hover:bg-muted text-muted-foreground transition-colors">
+        <div ref={pageRef} className="space-y-5">
+            <div className="flex flex-wrap items-center gap-3">
+                <button onClick={goBack} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted">
                     <ChevronLeft size={18} />
                 </button>
-                <div className="flex-1">
-                    <div className="flex items-center gap-3">
-                        <h1 className="text-xl font-bold text-foreground">Order {order.id}</h1>
+                <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-3">
+                        <h1 className="text-xl font-bold text-foreground">{title}</h1>
                         <StatusBadge status={order.status} />
                     </div>
-                    <p className="text-sm text-muted-foreground mt-0.5">Placed on {order.date} · Expected {order.due_date ?? order.deliveryDate}</p>
+                    <p className="mt-0.5 text-sm text-muted-foreground">
+                        {reference} · Placed {order.date} · Expected {order.due_date ?? order.deliveryDate}
+                        {viewer.role === 'tailor' && order.customer ? ` · ${order.customer}` : ''}
+                    </p>
                 </div>
-                {order.status === 'ready' && (
-                    <button onClick={() => router.visit(`/orders/${order.id}/checkout`)} className="px-4 py-2.5 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 transition-colors flex items-center gap-2">
+                {viewer.canPayBalance && (
+                    <button onClick={() => router.visit(`/orders/${order.id}/checkout`)} className="flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white">
                         <CreditCard size={15} /> Pay Balance
                     </button>
                 )}
-                {order.status === 'accepted' && (
-                    <button onClick={() => router.visit(`/orders/${order.id}/checkout`)} className="px-4 py-2.5 bg-primary text-primary-foreground text-sm font-semibold rounded-lg hover:bg-indigo-700 transition-colors flex items-center gap-2">
+                {viewer.canPayDeposit && (
+                    <button onClick={() => router.visit(`/orders/${order.id}/checkout`)} className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-semibold text-primary-foreground">
                         <CreditCard size={15} /> Pay Deposit
                     </button>
                 )}
+                {viewer.canDecide && (
+                    <>
+                        <button onClick={accept} disabled={deciding} className="rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">Accept</button>
+                        <button onClick={() => setRejectOpen(true)} disabled={deciding} className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-semibold text-red-600 disabled:opacity-50">Reject</button>
+                    </>
+                )}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-                <div className="lg:col-span-2 space-y-4">
-                    {/* Timeline */}
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+                <div className="space-y-4 lg:col-span-2">
                     <Card className="p-5">
-                        <h3 className="text-sm font-semibold text-foreground mb-5">Order Progress</h3>
+                        <h3 className="mb-5 text-sm font-semibold text-foreground">Order Progress</h3>
                         {order.status === 'rejected' ? (
-                            <div className="flex flex-col gap-3 p-4 bg-red-50 rounded-lg border border-red-100">
+                            <div className="flex flex-col gap-3 rounded-lg border border-red-100 bg-red-50 p-4">
                                 <div className="flex items-center gap-3">
                                     <XCircle size={20} className="text-red-500" />
                                     <div>
                                         <p className="text-sm font-semibold text-red-700">Order Rejected</p>
-                                        <p className="text-xs text-red-500 mt-0.5">Please review the notes below and resubmit.</p>
+                                        <p className="mt-0.5 text-xs text-red-500">Review the notes and resubmit if this is your order.</p>
                                     </div>
                                 </div>
-                                <button onClick={() => router.visit(`/orders/${order.id}/edit`)} className="self-start px-4 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700 transition">
-                                    Edit & Resubmit
-                                </button>
+                                {viewer.canEdit && (
+                                    <button onClick={() => router.visit(`/orders/${order.id}/edit`)} className="self-start rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white">
+                                        Edit & Resubmit
+                                    </button>
+                                )}
                             </div>
                         ) : (
                             <div className="relative">
-                                <div className="absolute left-4 top-4 bottom-4 w-0.5 bg-border" />
+                                <div className="absolute top-4 bottom-4 left-4 w-0.5 bg-border" />
                                 <div className="space-y-4">
                                     {TIMELINE_STEPS.map((step, idx) => {
                                         const done = idx < currentStepIdx;
                                         const active = idx === currentStepIdx;
+
                                         return (
-                                            <div key={step.key} className="flex items-center gap-4 relative">
-                                                <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 z-10 border-2 transition-all ${
-                                                    done ? 'bg-indigo-600 border-indigo-600 text-white' :
-                                                    active ? 'bg-white border-indigo-500 text-indigo-600 shadow-md shadow-indigo-100' :
-                                                    'bg-white border-border text-muted-foreground'
+                                            <div key={step.key} data-step className="relative flex items-center gap-4">
+                                                <div className={`z-10 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full border-2 ${
+                                                    done ? 'border-indigo-600 bg-indigo-600 text-white' :
+                                                    active ? 'border-indigo-500 bg-white text-indigo-600' :
+                                                    'border-border bg-white text-muted-foreground'
                                                 }`}>
                                                     {done ? <Check size={14} /> : step.icon}
                                                 </div>
                                                 <div className="flex-1">
                                                     <p className={`text-sm font-medium ${active ? 'text-indigo-600' : done ? 'text-foreground' : 'text-muted-foreground'}`}>
                                                         {step.label}
-                                                        {active && <span className="ml-2 text-xs bg-indigo-50 text-indigo-600 px-2 py-0.5 rounded-full font-medium border border-indigo-100">Current</span>}
                                                     </p>
-                                                    {done && <p className="text-xs text-muted-foreground">Completed</p>}
-                                                    {active && <p className="text-xs text-indigo-500">In progress...</p>}
                                                 </div>
                                             </div>
                                         );
@@ -363,110 +315,102 @@ export default function OrderTracking({ onNavigate }: { currentView?: View; onNa
                                 </div>
                             </div>
                         )}
+                        {viewer.canEdit && order.status === 'pending' && (
+                            <button onClick={() => router.visit(`/orders/${order.id}/edit`)} className="mt-4 text-sm font-medium text-indigo-600">
+                                Edit order
+                            </button>
+                        )}
                     </Card>
 
-                    {/* Chat */}
-                    <Card className="flex flex-col" style={{ height: '380px' }}>
-                        <div className="flex items-center gap-3 px-5 py-3.5 border-b border-border flex-shrink-0">
+                    <Card className="flex h-[380px] flex-col">
+                        <div className="flex flex-shrink-0 items-center gap-3 border-b border-border px-5 py-3.5">
                             <MessageSquare size={16} className="text-indigo-500" />
                             <h3 className="text-sm font-semibold text-foreground">Conversation</h3>
                         </div>
-                        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+                        <div ref={threadRef} className="flex-1 space-y-3 overflow-y-auto px-5 py-4">
                             {messages.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center h-full text-center">
-                                    <MessageSquare size={28} className="text-muted-foreground/40 mb-2" />
-                                    <p className="text-sm text-muted-foreground">No messages yet. Start the conversation!</p>
+                                <div className="flex h-full flex-col items-center justify-center text-center">
+                                    <MessageSquare size={28} className="mb-2 text-muted-foreground/40" />
+                                    <p className="text-sm text-muted-foreground">No messages yet.</p>
                                 </div>
-                            ) : messages.map(msg => (
-                                <div key={msg.id} className={`flex ${msg.sender === 'customer' ? 'justify-end' : 'justify-start'}`}>
-                                    <div className={`max-w-xs rounded-2xl px-4 py-2.5 ${
-                                        msg.sender === 'customer'
-                                            ? 'bg-primary text-primary-foreground rounded-br-sm'
-                                            : 'bg-muted text-foreground rounded-bl-sm'
-                                    }`}>
-                                        <p className="text-sm leading-relaxed">{msg.text}</p>
-                                        <p className={`text-xs mt-1 ${msg.sender === 'customer' ? 'text-indigo-200' : 'text-muted-foreground'}`}>{msg.time}</p>
+                            ) : messages.map((msg) => {
+                                const mine = msg.sender === viewer.role;
+
+                                return (
+                                    <div key={msg.id} className={`flex ${mine ? 'justify-end' : 'justify-start'}`}>
+                                        <div className={`max-w-xs rounded-lg px-4 py-2.5 ${mine ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground'}`}>
+                                            <p className={`text-[11px] font-medium ${mine ? 'text-primary-foreground/80' : 'text-muted-foreground'}`}>
+                                                {mine ? 'You' : msg.sender === 'tailor' ? 'Tailor' : 'Customer'}
+                                            </p>
+                                            <p className="text-sm leading-relaxed">{msg.text}</p>
+                                            <p className={`mt-1 text-xs ${mine ? 'text-primary-foreground/70' : 'text-muted-foreground'}`}>{msg.time}</p>
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
-                        <div className="px-4 pb-4 flex-shrink-0">
+                        <div className="flex-shrink-0 px-4 pb-4">
                             <div className="flex gap-2">
                                 <input
                                     value={newMsg}
-                                    onChange={e => setNewMsg(e.target.value)}
-                                    onKeyDown={e => e.key === 'Enter' && sendMsg()}
+                                    onChange={(event) => setNewMsg(event.target.value)}
+                                    onKeyDown={(event) => event.key === 'Enter' && sendMsg()}
                                     placeholder="Type a message..."
-                                    className="flex-1 px-3.5 py-2 text-sm bg-muted rounded-xl border border-border focus:border-indigo-300 focus:outline-none transition-all placeholder:text-muted-foreground"
+                                    className="flex-1 rounded-lg border border-border bg-muted px-3.5 py-2 text-sm focus:outline-none"
                                 />
-                                <button onClick={sendMsg} className="p-2 bg-primary text-primary-foreground rounded-xl hover:bg-indigo-700 transition-colors">
+                                <button onClick={sendMsg} disabled={sending || !newMsg.trim()} className="rounded-lg bg-primary p-2 text-primary-foreground disabled:opacity-40">
                                     <Send size={16} />
                                 </button>
                             </div>
+                            {sendError && <p className="mt-2 text-xs text-red-700">{sendError}</p>}
                         </div>
                     </Card>
                 </div>
 
-                {/* Order Details */}
                 <div className="space-y-4">
-                    {(() => {
-                        const items = getOrderItems(order);
-                        const totalPieces = items.reduce((sum, item) => sum + item.total_quantity, 0);
-                        const totalTypes = items.length;
+                    <Card className="p-4">
+                        <h3 className="mb-3 text-sm font-semibold text-foreground">Order Details</h3>
+                        <div className="space-y-2.5 text-sm">
+                            {items.map((item, idx) => {
+                                const sizes = activeSizes(item.sizes);
 
-                        return (
-                            <Card className="p-4">
-                                <h3 className="text-sm font-semibold text-foreground mb-3">Order Details</h3>
-                                <div className="space-y-2.5 text-sm">
-                                    <div className="flex justify-between">
-                                        <span className="text-muted-foreground">Items</span>
-                                        <span className="font-medium text-foreground">{totalPieces} pcs · {totalTypes} type{totalTypes !== 1 ? 's' : ''}</span>
-                                    </div>
-                                    {items.map((item, idx) => {
-                                        const activeSizes = getActiveSizes(item.sizes);
-                                        return (
-                                            <div key={idx} className="p-3 rounded-lg bg-muted/50 border border-border space-y-2">
-                                                <div className="flex items-start justify-between gap-2">
-                                                    <p className="text-sm font-medium text-foreground leading-snug">{item.product_name}</p>
-                                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100 flex-shrink-0">
-                                                        {item.total_quantity}×
+                                return (
+                                    <div key={idx} className="space-y-2 rounded-lg border border-border bg-muted/50 p-3">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <p className="text-sm font-medium text-foreground">{item.product_name}</p>
+                                            <span className="text-xs font-semibold text-indigo-700">{item.total_quantity}×</span>
+                                        </div>
+                                        <p className="text-xs text-muted-foreground">{formatCurrency(Number(item.subtotal) || 0)}</p>
+                                        {sizes.length > 0 && (
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {sizes.map(({ size, qty }) => (
+                                                    <span key={size} className="inline-flex items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium">
+                                                        <span className="text-muted-foreground">{size}</span>
+                                                        <span className="text-indigo-600">×{qty}</span>
                                                     </span>
-                                                </div>
-                                                <p className="text-xs text-muted-foreground">{formatCurrency(item.subtotal)}</p>
-                                                {activeSizes.length > 0 ? (
-                                                    <div className="flex flex-wrap gap-1.5">
-                                                        {activeSizes.map(({ size, qty }) => (
-                                                            <span key={size} className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-background border border-border text-[11px] font-medium text-foreground">
-                                                                <span className="text-muted-foreground">{size}</span>
-                                                                <span className="text-indigo-600">×{qty}</span>
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                ) : (
-                                                    <p className="text-[11px] text-muted-foreground italic">No size breakdown</p>
-                                                )}
+                                                ))}
                                             </div>
-                                        );
-                                    })}
-                                </div>
-                            </Card>
-                        );
-                    })()}
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </Card>
 
                     <Card className="p-4">
-                        <h3 className="text-sm font-semibold text-foreground mb-3">Financial Summary</h3>
+                        <h3 className="mb-3 text-sm font-semibold text-foreground">Financial Summary</h3>
                         <div className="space-y-2.5 text-sm">
                             <div className="flex justify-between">
                                 <span className="text-muted-foreground">Total Amount</span>
                                 <span className="font-medium text-foreground">{formatCurrency(order.total)}</span>
                             </div>
                             <div className="flex justify-between">
-                                <span className="text-muted-foreground">Deposit Paid</span>
+                                <span className="text-muted-foreground">{depositRecorded ? 'Deposit paid' : 'Deposit due'}</span>
                                 <span className="font-medium text-foreground">{formatCurrency(order.deposit)}</span>
                             </div>
-                            <div className="h-px bg-border my-1" />
+                            <div className="my-1 h-px bg-border" />
                             <div className="flex justify-between">
-                                <span className="text-muted-foreground font-medium">Remaining Balance</span>
+                                <span className="font-medium text-muted-foreground">Remaining Balance</span>
                                 <span className="font-semibold text-foreground">{formatCurrency(getRemainingBalance(order))}</span>
                             </div>
                         </div>
@@ -474,33 +418,21 @@ export default function OrderTracking({ onNavigate }: { currentView?: View; onNa
 
                     {order.hasDesign && (
                         <Card className="p-4">
-                            <h3 className="text-sm font-semibold text-foreground mb-3">Design</h3>
-                            {(order as Order & { designPreview?: string | null }).designPreview && (
-                                <img src={(order as Order & { designPreview?: string }).designPreview} alt="Saved design" className="w-full rounded border border-border mb-3 bg-white" />
-                            )}
-                            <div className="bg-muted rounded-lg p-3 flex items-center gap-3">
-                                <div className="w-9 h-9 rounded-lg bg-indigo-100 flex items-center justify-center">
-                                    <ImageIcon size={15} className="text-indigo-600" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-xs font-medium text-foreground truncate">{getDesignFileName(order.design_file_path)}</p>
-                                    <p className="text-xs text-muted-foreground">Design file</p>
-                                </div>
-                                <button className="p-1.5 hover:bg-muted rounded text-muted-foreground hover:text-foreground transition-colors">
-                                    <Download size={14} />
-                                </button>
-                            </div>
+                            <h3 className="mb-3 text-sm font-semibold text-foreground">Design</h3>
+                            <DesignPreview src={order.designPreview} label={`${reference} design`} />
                         </Card>
                     )}
 
                     {order.notes && (
                         <Card className="p-4">
-                            <h3 className="text-sm font-semibold text-foreground mb-2">Special Instructions</h3>
-                            <p className="text-sm text-muted-foreground leading-relaxed">{order.notes}</p>
+                            <h3 className="mb-2 text-sm font-semibold text-foreground">Special Instructions</h3>
+                            <p className="text-sm leading-relaxed whitespace-pre-wrap text-muted-foreground">{order.notes}</p>
                         </Card>
                     )}
                 </div>
             </div>
+
+            <RejectOrderDialog open={rejectOpen} busy={deciding} onClose={() => setRejectOpen(false)} onConfirm={reject} />
         </div>
     );
 }

@@ -55,7 +55,7 @@ class TailorOrderController extends Controller
     public function kanban()
     {
         $orders = Order::with('customer')
-            ->whereIn('status', ['accepted', 'deposit_paid', 'in_production', 'quality_check', 'ready', 'completed'])
+            ->whereIn('status', ['accepted', 'deposit_paid', 'in_production', 'quality_check', 'ready'])
             ->orderByDesc('created_at')
             ->get()
             ->map(fn (Order $order) => OrderFormatter::forTailor($order))
@@ -124,7 +124,7 @@ class TailorOrderController extends Controller
             }
 
             fputcsv($csv, [
-                (string) $order->id,
+                (string) ($order->number ?: $order->id),
                 $customer?->name ?? 'Unknown Customer',
                 $customer?->email ?? '',
                 (string) $order->product_name,
@@ -168,8 +168,9 @@ class TailorOrderController extends Controller
 
     public function reject(Request $request, Order $order)
     {
-        $request->validate([
+        $data = $request->validate([
             'reason' => ['required', 'string', 'max:255'],
+            'notes' => ['nullable', 'string', 'max:1000'],
         ]);
 
         $order = Order::with('customer')->findOrFail($order->id);
@@ -178,11 +179,13 @@ class TailorOrderController extends Controller
             abort(409, 'Only pending orders can be rejected.');
         }
 
+        $reason = trim($data['reason'].(filled($data['notes'] ?? null) ? ' — '.$data['notes'] : ''));
+
         $order->update([
             'status' => 'rejected',
-            'notes' => trim(($order->notes ?: '')."\n\nRejected: ".$request->input('reason')),
+            'notes' => trim(($order->notes ?: '')."\n\nRejected: ".$reason),
         ]);
-        $this->notifyStatus($order, $request->input('reason'));
+        $this->notifyStatus($order, $reason);
 
         return back()->with('success', 'Order rejected.');
     }
@@ -190,9 +193,10 @@ class TailorOrderController extends Controller
     private function notifyStatus(Order $order, ?string $reason = null): void
     {
         $status = str_replace('_', ' ', (string) $order->status);
+        $reference = (string) ($order->number ?: 'Your order');
         $body = $reason
-            ? "Your order was rejected. {$reason}"
-            : "Your order is now {$status}.";
+            ? "{$reference} was rejected. {$reason}"
+            : "{$reference} is now {$status}.";
 
         Notifier::to(
             (string) $order->customer_id,
